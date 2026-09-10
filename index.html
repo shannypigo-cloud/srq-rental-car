@@ -4294,13 +4294,48 @@ table thead th.sortable-th.sort-desc{
 
   let dashboardRange = {start:new Date('2026-09-01T00:00:00'), end:new Date('2026-09-08T23:59:59')};
 
-  function parseLocalDate(dateStr,endOfDay=false){
-    const [y,m,d] = dateStr.split('-').map(Number);
-    return new Date(y,m-1,d,endOfDay?23:0,endOfDay?59:0,endOfDay?59:0);
+  function normalizeDateOnly_(value){
+    if(!value) return '';
+
+    // Already a clean HTML date value.
+    if(typeof value === 'string'){
+      const raw = value.trim();
+
+      // Handles both YYYY-MM-DD and Apps Script ISO values such as
+      // 2026-09-08T04:00:00.000Z without allowing timezone conversion
+      // to move the calendar date.
+      const isoDate = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if(isoDate) return `${isoDate[1]}-${isoDate[2]}-${isoDate[3]}`;
+    }
+
+    const d = value instanceof Date ? value : new Date(value);
+    if(Number.isNaN(d.getTime())) return '';
+
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth()+1).padStart(2,'0');
+    const dd = String(d.getDate()).padStart(2,'0');
+    return `${yyyy}-${mm}-${dd}`;
   }
 
-  function formatShortDate(dateStr){
-    const d = parseLocalDate(dateStr);
+  function parseLocalDate(value,endOfDay=false){
+    const normalized = normalizeDateOnly_(value);
+    if(!normalized) return new Date(NaN);
+
+    const [y,m,d] = normalized.split('-').map(Number);
+    return new Date(
+      y,
+      m-1,
+      d,
+      endOfDay ? 23 : 0,
+      endOfDay ? 59 : 0,
+      endOfDay ? 59 : 0,
+      endOfDay ? 999 : 0
+    );
+  }
+
+  function formatShortDate(value){
+    const d = parseLocalDate(value);
+    if(Number.isNaN(d.getTime())) return '—';
     return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
   }
 
@@ -5963,14 +5998,7 @@ table thead th.sortable-th.sort-desc{
   // <input type="date"> requires. Returns '' for anything it can't parse,
   // so the field is left blank instead of silently rejecting a bad value.
   function toDateInputValue_(v){
-    if(!v) return '';
-    if(typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
-    const d = new Date(v);
-    if(Number.isNaN(d.getTime())) return '';
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth()+1).padStart(2,'0');
-    const dd = String(d.getDate()).padStart(2,'0');
-    return `${yyyy}-${mm}-${dd}`;
+    return normalizeDateOnly_(v);
   }
 
   function todayISO_(){
@@ -6007,6 +6035,20 @@ table thead th.sortable-th.sort-desc{
       replaceAll_(rentals, data.rentals);
       replaceAll_(maintenanceRecords, data.maintenance);
       replaceAll_(claimsInvoices, data.invoices);
+
+      // Google Sheets Date/Time cells arrive through Apps Script as ISO
+      // datetimes. Normalize rental calendar/time fields once after loading
+      // so tables, check-in, reports and profiles all consume the same shape.
+      Object.values(rentals).forEach(r=>{
+        r.startDate = normalizeDateOnly_(r.startDate);
+        r.scheduledReturnDate = normalizeDateOnly_(r.scheduledReturnDate);
+        r.returnDate = normalizeDateOnly_(r.returnDate);
+        r.startTime = normalizeTimeOnly_(r.startTime);
+        r.scheduledReturnTime = normalizeTimeOnly_(r.scheduledReturnTime);
+        r.returnTime = normalizeTimeOnly_(r.returnTime);
+        if(r.startDate) r.start = formatShortDate(r.startDate);
+        if(r.scheduledReturnDate) r.expected = formatShortDate(r.scheduledReturnDate);
+      });
 
       currentVehicleId = Object.keys(vehicleRecords)[0] || null;
       currentCustomerId = Object.keys(customers)[0] || null;
@@ -7016,14 +7058,14 @@ table thead th.sortable-th.sort-desc{
       `Salió con <strong>${formatInteger(r.milesOut)} millas</strong> · Gasolina: <strong>${r.gasOut}</strong> · Regreso esperado: <strong>${r.expected}</strong><br>` +
       `${Number(r.allowedMilesPerDay)>0 ? `<strong>${formatInteger(r.allowedMilesPerDay)} mi/día</strong> · ${formatInteger(rentalAllowedMiles(r))} mi permitidas` : '<strong>Millaje:</strong> Unlimited'} · Delivery: <strong>${formatCurrency(r.deliveryFee||0)}</strong>`;
     document.getElementById('scheduledStartDate').value = toDateInputValue_(r.startDate);
-    document.getElementById('scheduledStartTime').value = r.startTime || '';
+    document.getElementById('scheduledStartTime').value = normalizeTimeOnly_(r.startTime);
     document.getElementById('scheduledReturnDate').value = toDateInputValue_(r.scheduledReturnDate || r.returnDate);
-    document.getElementById('scheduledReturnTime').value = r.scheduledReturnTime || '';
+    document.getElementById('scheduledReturnTime').value = normalizeTimeOnly_(r.scheduledReturnTime);
     document.getElementById('milesOut').value = r.milesOut;
     document.getElementById('milesIn').value = '';
     refreshPrettyNumberInput('milesOut');
     document.getElementById('returnDate').value = toDateInputValue_(r.returnDate || r.scheduledReturnDate) || todayISO_();
-    document.getElementById('returnTime').value = r.returnTime || r.scheduledReturnTime || '';
+    document.getElementById('returnTime').value = normalizeTimeOnly_(r.returnTime || r.scheduledReturnTime);
     ['lateFee','fuelFee','cleaningFee','mileageFee','otherFee','discount'].forEach(id=>document.getElementById(id).value=0);
     document.querySelectorAll('.fuel-btn').forEach(b=>b.classList.remove('active'));
     document.querySelector('.fuel-btn').classList.add('active');
@@ -7043,10 +7085,15 @@ table thead th.sortable-th.sort-desc{
     return readAppNumber(id);
   }
 
-  function combineDateTime(dateStr,timeStr){
+  function combineDateTime(dateValue,timeValue){
+    const dateStr = normalizeDateOnly_(dateValue);
+    const timeStr = normalizeTimeOnly_(timeValue);
     if(!dateStr || !timeStr) return null;
-    const d = new Date(`${dateStr}T${timeStr}:00`);
-    return isNaN(d.getTime()) ? null : d;
+
+    const [y,m,d] = dateStr.split('-').map(Number);
+    const [hh,mm] = timeStr.split(':').map(Number);
+    const dt = new Date(y,m-1,d,hh,mm,0,0);
+    return Number.isNaN(dt.getTime()) ? null : dt;
   }
 
   function minutesLate(scheduledDate,scheduledTime,actualDate,actualTime){
@@ -7146,9 +7193,36 @@ table thead th.sortable-th.sort-desc{
   }
 
 
-  function formatTime(t){
-    if(!t) return '—';
-    const [hh,mm] = t.split(':').map(Number);
+  function normalizeTimeOnly_(value){
+    if(value === null || value === undefined || value === '') return '';
+
+    if(typeof value === 'string'){
+      const raw = value.trim();
+
+      // Normal browser/form value: HH:mm or HH:mm:ss
+      const plain = raw.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+      if(plain){
+        const hh = Number(plain[1]);
+        const mm = Number(plain[2]);
+        if(hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59){
+          return `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
+        }
+      }
+    }
+
+    // A Google Sheets time cell normally reaches the browser as a full
+    // ISO datetime. Convert that instant to the browser's local clock.
+    const d = value instanceof Date ? value : new Date(value);
+    if(Number.isNaN(d.getTime())) return '';
+
+    return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  }
+
+  function formatTime(value){
+    const normalized = normalizeTimeOnly_(value);
+    if(!normalized) return '—';
+
+    const [hh,mm] = normalized.split(':').map(Number);
     const suffix = hh >= 12 ? 'PM' : 'AM';
     const h12 = hh % 12 || 12;
     return `${h12}:${String(mm).padStart(2,'0')} ${suffix}`;
@@ -7189,9 +7263,9 @@ table thead th.sortable-th.sort-desc{
     document.getElementById('profileNet').textContent = formatCurrency(rentalNet(r));
 
     document.getElementById('editScheduledReturnDate').value = toDateInputValue_(r.scheduledReturnDate);
-    document.getElementById('editScheduledReturnTime').value = r.scheduledReturnTime || '';
+    document.getElementById('editScheduledReturnTime').value = normalizeTimeOnly_(r.scheduledReturnTime);
     document.getElementById('editReturnDate').value = toDateInputValue_(r.returnDate);
-    document.getElementById('editReturnTime').value = r.returnTime || '';
+    document.getElementById('editReturnTime').value = normalizeTimeOnly_(r.returnTime);
     document.getElementById('editMilesIn').value = r.milesIn;
     document.getElementById('editFuel').value = r.fuelIn;
     document.getElementById('editLateFee').value = r.lateFee || 0;
