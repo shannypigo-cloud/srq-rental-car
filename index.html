@@ -72,6 +72,12 @@
     .card h2{font-size:20px;margin:0}
     .card p{margin:5px 0 0;color:var(--muted);font-size:14px}
     .view{display:none}.view.active{display:block}
+    .report-panel{display:none}.report-panel.active{display:block}
+    .compliance-badge{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;font-size:11px;font-weight:800}
+    .compliance-badge.ok{background:#e3f6ec;color:#1a7a4d}
+    .compliance-badge.soon{background:#fff3d9;color:#a3720a}
+    .compliance-badge.expired{background:#fde5e6;color:#a3252c}
+    .compliance-badge.unknown{background:var(--soft);color:var(--muted)}
     .table-wrap{overflow-x:auto;overflow-y:hidden;width:100%;max-width:100%;-webkit-overflow-scrolling:touch}
     table{width:100%;border-collapse:collapse}
     th{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);text-align:left;padding:10px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
@@ -2507,6 +2513,7 @@ table thead th.sortable-th.sort-desc{
       <button data-view="customers">Clientes</button>
       <button data-view="vehicles">Vehículos</button>
       <button data-view="maintenance">Mantenimiento</button>
+      <button data-view="reports">Reportes</button>
     </nav>
     <div id="sessionBar" style="padding:14px 0;border-top:1px solid rgba(255,255,255,.12);margin-top:12px"></div>
     <div class="aside-foot">SRQ Rental Car · Operations System<br><span style="color:#68709c">Google Sheets + Apps Script</span></div>
@@ -3034,6 +3041,173 @@ table thead th.sortable-th.sort-desc{
           </table>
         </div>
         <div class="helper">Haz click en cualquier registro para abrir el historial completo de mantenimiento, notas y edición.</div>
+      </div>
+    </section>
+
+    <section id="reports" class="view">
+      <div class="topbar">
+        <div class="page-branding">
+          <img class="page-logo" src="logo.jpg" alt="SRQ Rental Car">
+          <div class="page-heading">
+            <div class="eyebrow">SRQ Rental Car · Fleet operations</div>
+            <h1>Reportes.</h1>
+          </div>
+        </div>
+      </div>
+
+      <div class="customer-tabs" style="margin-bottom:20px">
+        <button class="customer-tab active" data-report-tab="financial" onclick="showReportTab('financial',this)">Financiero</button>
+        <button class="customer-tab" data-report-tab="vehicles" onclick="showReportTab('vehicles',this)">Por vehículo</button>
+        <button class="customer-tab" data-report-tab="maintenance" onclick="showReportTab('maintenance',this)">Mantenimiento</button>
+        <button class="customer-tab" data-report-tab="compliance" onclick="showReportTab('compliance',this)">Vencimientos</button>
+      </div>
+
+      <div class="dashboard-filters">
+        <button class="filter-pill" data-report-range="30d" onclick="setReportRange('30d',this)">Últimos 30 días</button>
+        <button class="filter-pill" data-report-range="90d" onclick="setReportRange('90d',this)">Últimos 90 días</button>
+        <button class="filter-pill active" data-report-range="year" onclick="setReportRange('year',this)">Este año</button>
+        <button class="filter-pill" data-report-range="all" onclick="setReportRange('all',this)">Todo</button>
+        <button class="filter-pill" data-report-range="custom" onclick="setReportRange('custom',this)">Rango personalizado</button>
+
+        <div class="custom-range" id="reportCustomRangeBox">
+          <input type="date" id="reportCustomStart">
+          <span style="color:var(--muted);font-weight:800">a</span>
+          <input type="date" id="reportCustomEnd">
+          <button class="btn primary" type="button" onclick="applyReportCustomRange()">Aplicar</button>
+        </div>
+
+        <div class="period-label" id="reportPeriodLabel">Este año</div>
+      </div>
+
+      <!-- FINANCIERO -->
+      <div class="report-panel active" id="report-financial">
+        <div class="grid metrics">
+          <div class="metric"><div class="label">Ingresos brutos</div><strong id="repFinGross">$0</strong><div class="delta">rental + delivery</div></div>
+          <div class="metric"><div class="label">Net</div><strong id="repFinNet">$0</strong><div class="delta">después de fees y descuentos</div></div>
+          <div class="metric"><div class="label">Platform fees</div><strong id="repFinPlatform">$0</strong><div class="delta">Turo</div></div>
+          <div class="metric"><div class="label">Costo de mantenimiento</div><strong id="repFinMaint">$0</strong><div class="delta">período seleccionado</div></div>
+        </div>
+
+        <div class="grid two">
+          <div class="card">
+            <div class="card-head"><div><h2>Ingresos por mes</h2><p>Gross vs Net, últimos meses del período.</p></div></div>
+            <canvas id="repFinMonthlyChart" height="220"></canvas>
+          </div>
+          <div class="card">
+            <div class="card-head"><div><h2>Ingresos por canal</h2><p>Turo vs Private.</p></div></div>
+            <canvas id="repFinChannelChart" height="220"></canvas>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:20px">
+          <div class="card-head">
+            <div><h2>Detalle de rentas</h2><p>Todas las rentas del período seleccionado.</p></div>
+            <div style="display:flex;gap:8px">
+              <button class="btn secondary" onclick="exportReportExcel('financial')">⬇ Excel</button>
+              <button class="btn secondary" onclick="exportReportPDF('financial')">⬇ PDF</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Renta</th><th>Vehículo</th><th>Canal</th><th>Fecha</th><th>Gross</th><th>Platform</th><th>Net</th></tr></thead>
+              <tbody id="repFinTable"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- POR VEHÍCULO -->
+      <div class="report-panel" id="report-vehicles">
+        <div class="grid metrics">
+          <div class="metric"><div class="label">Vehículos activos</div><strong id="repVehCount">0</strong><div class="delta">en la flota</div></div>
+          <div class="metric"><div class="label">Ingreso promedio / vehículo</div><strong id="repVehAvgRevenue">$0</strong><div class="delta">período seleccionado</div></div>
+          <div class="metric"><div class="label">Más rentable</div><strong id="repVehTop">—</strong><div class="delta">por net del período</div></div>
+          <div class="metric"><div class="label">Menos rentable</div><strong id="repVehBottom">—</strong><div class="delta">por net del período</div></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><div><h2>Net por vehículo</h2><p>Ingresos netos del período, por vehículo.</p></div></div>
+          <canvas id="repVehChart" height="260"></canvas>
+        </div>
+
+        <div class="card" style="margin-top:20px">
+          <div class="card-head">
+            <div><h2>Rentabilidad por vehículo</h2><p>Ingresos vs costo de mantenimiento del período.</p></div>
+            <div style="display:flex;gap:8px">
+              <button class="btn secondary" onclick="exportReportExcel('vehicles')">⬇ Excel</button>
+              <button class="btn secondary" onclick="exportReportPDF('vehicles')">⬇ PDF</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Vehículo</th><th>Rentas</th><th>Millas</th><th>Gross</th><th>Net</th><th>Mantenimiento</th><th>Ganancia real</th></tr></thead>
+              <tbody id="repVehTable"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- MANTENIMIENTO -->
+      <div class="report-panel" id="report-maintenance">
+        <div class="grid metrics">
+          <div class="metric"><div class="label">Costo total</div><strong id="repMaintTotal">$0</strong><div class="delta">período seleccionado</div></div>
+          <div class="metric"><div class="label">Servicios realizados</div><strong id="repMaintCount">0</strong><div class="delta">período seleccionado</div></div>
+          <div class="metric"><div class="label">Próximos por vencer</div><strong id="repMaintUpcoming">0</strong><div class="delta">por millaje o fecha</div></div>
+          <div class="metric"><div class="label">Costo promedio</div><strong id="repMaintAvg">$0</strong><div class="delta">por servicio</div></div>
+        </div>
+
+        <div class="grid two">
+          <div class="card">
+            <div class="card-head"><div><h2>Costo por tipo de servicio</h2><p>Distribución del gasto en mantenimiento.</p></div></div>
+            <canvas id="repMaintTypeChart" height="220"></canvas>
+          </div>
+          <div class="card">
+            <div class="card-head"><div><h2>Costo por vehículo</h2><p>Cuáles carros cuestan más mantener.</p></div></div>
+            <canvas id="repMaintVehicleChart" height="220"></canvas>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:20px">
+          <div class="card-head">
+            <div><h2>Próximos mantenimientos</h2><p>Basado en próximo cambio de aceite por millaje o fecha.</p></div>
+            <div style="display:flex;gap:8px">
+              <button class="btn secondary" onclick="exportReportExcel('maintenance')">⬇ Excel</button>
+              <button class="btn secondary" onclick="exportReportPDF('maintenance')">⬇ PDF</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Vehículo</th><th>Millaje actual</th><th>Próximo cambio (mi)</th><th>Millas restantes</th><th>Próxima fecha</th><th>Estado</th></tr></thead>
+              <tbody id="repMaintUpcomingTable"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- VENCIMIENTOS -->
+      <div class="report-panel" id="report-compliance">
+        <div class="grid metrics">
+          <div class="metric"><div class="label">Vencidos</div><strong id="repCompExpired">0</strong><div class="delta">seguro o registración</div></div>
+          <div class="metric"><div class="label">Vencen en 30 días</div><strong id="repCompSoon">0</strong><div class="delta">requieren atención pronto</div></div>
+          <div class="metric"><div class="label">Al día</div><strong id="repCompOk">0</strong><div class="delta">sin acción requerida</div></div>
+          <div class="metric"><div class="label">Vehículos monitoreados</div><strong id="repCompTotal">0</strong><div class="delta">con datos de vencimiento</div></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div><h2>Seguro y registración por vehículo</h2><p>Ordenado por el vencimiento más próximo primero.</p></div>
+            <div style="display:flex;gap:8px">
+              <button class="btn secondary" onclick="exportReportExcel('compliance')">⬇ Excel</button>
+              <button class="btn secondary" onclick="exportReportPDF('compliance')">⬇ PDF</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Vehículo</th><th>Registración vence</th><th>Estado</th><th>Seguro vence</th><th>Estado</th></tr></thead>
+              <tbody id="repCompTable"></tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </section>
   </main>
@@ -4098,6 +4272,12 @@ table thead th.sortable-th.sort-desc{
     </div>
   </div>
 </div>
+
+<!-- Reportes: gráficas (Chart.js), Excel (SheetJS) y PDF (jsPDF) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.1/jspdf.plugin.autotable.min.js"></script>
 
 <script>
   const DASHBOARD_TODAY = new Date('2026-09-08T12:00:00');
@@ -6752,6 +6932,7 @@ table thead th.sortable-th.sort-desc{
     document.getElementById(id).classList.add('active');
     document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===id));
     updateContextAction(id);
+    if(id === 'reports') renderActiveReportTab();
     window.scrollTo({top:0,behavior:'smooth'});
   }
 
@@ -6761,6 +6942,12 @@ table thead th.sortable-th.sort-desc{
     currentView = view;
     const btn = document.getElementById('contextActionBtn');
     if(!btn) return;
+
+    if(view === 'reports'){
+      btn.style.display = 'none';
+      return;
+    }
+    btn.style.display = '';
 
     if(view === 'customers'){
       btn.textContent = '+ Nuevo cliente';
@@ -7372,6 +7559,405 @@ table thead th.sortable-th.sort-desc{
   document.addEventListener('DOMContentLoaded',()=>{
     setTimeout(setupRentalInputFormatting,80);
   });
+
+  // ============================================================
+  // REPORTES
+  // Todo se calcula del lado del cliente a partir de los datos ya
+  // cargados (rentals, vehicleRecords, maintenanceRecords) — no hay
+  // llamadas nuevas al backend. Gráficas con Chart.js, Excel con
+  // SheetJS, PDF con jsPDF + autotable, todo vía CDN.
+  // ============================================================
+
+  let reportRange = { type: 'year', start: null, end: null };
+  let currentReportTab = 'financial';
+  const reportCharts = {}; // guarda instancias de Chart.js para poder destruirlas al re-renderizar
+
+  function reportRangeBounds(){
+    const today = DASHBOARD_TODAY;
+    if(reportRange.type === 'all') return { start: null, end: null };
+    if(reportRange.type === 'custom') return { start: reportRange.start, end: reportRange.end };
+    let start = new Date(today);
+    if(reportRange.type === '30d') start.setDate(start.getDate()-30);
+    else if(reportRange.type === '90d') start.setDate(start.getDate()-90);
+    else if(reportRange.type === 'year') start = new Date(today.getFullYear(),0,1);
+    return { start, end: today };
+  }
+
+  function inReportRange(dateStr){
+    if(!dateStr) return false;
+    const { start, end } = reportRangeBounds();
+    if(!start && !end) return true;
+    const d = parseLocalDate(dateStr);
+    if(start && d < start) return false;
+    if(end && d > parseLocalDate2(end)) return false;
+    return true;
+  }
+  // parseLocalDate espera un string 'YYYY-MM-DD'; reportRangeBounds a veces
+  // entrega objetos Date ya construidos (rangos relativos) — este helper
+  // normaliza ambos casos para la comparación de "end" en inReportRange.
+  function parseLocalDate2(d){
+    return d instanceof Date ? d : parseLocalDate(d, true);
+  }
+
+  function setReportRange(type, btn){
+    reportRange = { type, start: null, end: null };
+    document.querySelectorAll('[data-report-range]').forEach(b=>b.classList.toggle('active', b===btn));
+    const box = document.getElementById('reportCustomRangeBox');
+    if(box) box.classList.toggle('show', type==='custom');
+
+    const labels = { '30d':'Últimos 30 días', '90d':'Últimos 90 días', 'year':'Este año', 'all':'Todo el historial' };
+    const label = document.getElementById('reportPeriodLabel');
+    if(label && type!=='custom') label.textContent = labels[type] || '';
+
+    if(type !== 'custom') renderActiveReportTab();
+  }
+
+  function applyReportCustomRange(){
+    const s = document.getElementById('reportCustomStart').value;
+    const e = document.getElementById('reportCustomEnd').value;
+    if(!s || !e){ alert('Selecciona ambas fechas.'); return; }
+    reportRange = { type:'custom', start: parseLocalDate(s), end: parseLocalDate(e,true) };
+    const label = document.getElementById('reportPeriodLabel');
+    if(label) label.textContent = `${formatShortDate(s)} – ${formatShortDate(e)}`;
+    renderActiveReportTab();
+  }
+
+  function showReportTab(tab, btn){
+    currentReportTab = tab;
+    document.querySelectorAll('[data-report-tab]').forEach(b=>b.classList.toggle('active', b===btn));
+    document.querySelectorAll('.report-panel').forEach(p=>p.classList.remove('active'));
+    document.getElementById('report-'+tab).classList.add('active');
+    renderActiveReportTab();
+  }
+
+  function renderActiveReportTab(){
+    if(currentReportTab==='financial') renderFinancialReport();
+    else if(currentReportTab==='vehicles') renderVehicleReport();
+    else if(currentReportTab==='maintenance') renderMaintenanceReport();
+    else if(currentReportTab==='compliance') renderComplianceReport();
+  }
+
+  function destroyChart(id){
+    if(reportCharts[id]){ reportCharts[id].destroy(); delete reportCharts[id]; }
+  }
+
+  // ---------- FINANCIERO ----------
+
+  function financialReportRows(){
+    return Object.values(rentals).filter(r=>inReportRange(r.startDate));
+  }
+
+  function renderFinancialReport(){
+    const rows = financialReportRows();
+    const gross = rows.reduce((s,r)=>s+bookingRevenue(r),0);
+    const platform = rows.reduce((s,r)=>s+(Number(r.turoFee)||0),0);
+    const net = rows.reduce((s,r)=>s+(r.status==='closed'?(Number(r.net)||0):rentalNet(r)),0);
+    const maintCost = Object.values(maintenanceRecords)
+      .filter(m=>inReportRange(m.date))
+      .reduce((s,m)=>s+(Number(m.cost)||0),0);
+
+    document.getElementById('repFinGross').textContent = formatCurrency(gross);
+    document.getElementById('repFinNet').textContent = formatCurrency(net);
+    document.getElementById('repFinPlatform').textContent = formatCurrency(platform);
+    document.getElementById('repFinMaint').textContent = formatCurrency(maintCost);
+
+    // Ingresos por mes (gross vs net)
+    const byMonth = {};
+    rows.forEach(r=>{
+      const d = parseLocalDate(r.startDate);
+      const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+      if(!byMonth[key]) byMonth[key] = { gross:0, net:0 };
+      byMonth[key].gross += bookingRevenue(r);
+      byMonth[key].net += r.status==='closed' ? (Number(r.net)||0) : rentalNet(r);
+    });
+    const monthKeys = Object.keys(byMonth).sort();
+    const monthLabels = monthKeys.map(k=>{
+      const [y,m] = k.split('-');
+      return new Date(y,m-1,1).toLocaleDateString('es-US',{month:'short',year:'2-digit'});
+    });
+
+    destroyChart('repFinMonthlyChart');
+    reportCharts.repFinMonthlyChart = new Chart(document.getElementById('repFinMonthlyChart'), {
+      type:'bar',
+      data:{ labels: monthLabels, datasets:[
+        { label:'Gross', data: monthKeys.map(k=>byMonth[k].gross), backgroundColor:'#304bff' },
+        { label:'Net', data: monthKeys.map(k=>byMonth[k].net), backgroundColor:'#23915b' }
+      ]},
+      options:{ responsive:true, plugins:{legend:{position:'bottom'}}, scales:{y:{beginAtZero:true}} }
+    });
+
+    // Ingresos por canal
+    const byChannel = {};
+    rows.forEach(r=>{ byChannel[r.source] = (byChannel[r.source]||0) + bookingRevenue(r); });
+    destroyChart('repFinChannelChart');
+    reportCharts.repFinChannelChart = new Chart(document.getElementById('repFinChannelChart'), {
+      type:'pie',
+      data:{ labels: Object.keys(byChannel), datasets:[{
+        data: Object.values(byChannel),
+        backgroundColor:['#304bff','#23915b','#b87900','#c73c4a','#6b7280']
+      }]},
+      options:{ responsive:true, plugins:{legend:{position:'bottom'}} }
+    });
+
+    // Tabla detalle
+    const sorted = [...rows].sort((a,b)=>new Date(b.startDate)-new Date(a.startDate));
+    document.getElementById('repFinTable').innerHTML = sorted.map(r=>`
+      <tr>
+        <td>${r.id}</td><td>${esc(r.vehicle)}</td><td>${esc(r.source)}</td>
+        <td>${formatShortDate(r.startDate)}</td>
+        <td>${formatCurrency(bookingRevenue(r))}</td>
+        <td>${formatCurrency(r.turoFee||0)}</td>
+        <td>${formatCurrency(r.status==='closed'?(r.net||0):rentalNet(r))}</td>
+      </tr>`).join('') || '<tr><td colspan="7" class="history-empty">Sin rentas en este período.</td></tr>';
+  }
+
+  // ---------- POR VEHÍCULO ----------
+
+  function vehicleReportRows(){
+    const rentalRows = financialReportRows();
+    return Object.values(vehicleRecords).map(v=>{
+      const vRentals = rentalRows.filter(r=>r.vehicleId===v.id);
+      const gross = vRentals.reduce((s,r)=>s+bookingRevenue(r),0);
+      const net = vRentals.reduce((s,r)=>s+(r.status==='closed'?(Number(r.net)||0):rentalNet(r)),0);
+      const miles = vRentals.reduce((s,r)=>s+Math.max(0,(Number(r.milesIn)||Number(r.milesOut)||0)-(Number(r.milesOut)||0)),0);
+      const maintCost = Object.values(maintenanceRecords)
+        .filter(m=>m.vehicleId===v.id && inReportRange(m.date))
+        .reduce((s,m)=>s+(Number(m.cost)||0),0);
+      return {
+        id:v.id, label:`${v.year} ${v.make} ${v.model}`, rentals:vRentals.length,
+        miles, gross, net, maintCost, profit: net - maintCost
+      };
+    });
+  }
+
+  function renderVehicleReport(){
+    const rows = vehicleReportRows().sort((a,b)=>b.net-a.net);
+    document.getElementById('repVehCount').textContent = rows.length;
+    const totalRevenue = rows.reduce((s,r)=>s+r.gross,0);
+    document.getElementById('repVehAvgRevenue').textContent = formatCurrency(rows.length ? totalRevenue/rows.length : 0);
+    document.getElementById('repVehTop').textContent = rows[0] ? rows[0].label : '—';
+    document.getElementById('repVehBottom').textContent = rows.length ? rows[rows.length-1].label : '—';
+
+    destroyChart('repVehChart');
+    reportCharts.repVehChart = new Chart(document.getElementById('repVehChart'), {
+      type:'bar',
+      data:{ labels: rows.map(r=>r.label), datasets:[{ label:'Net del período', data: rows.map(r=>r.net), backgroundColor:'#304bff' }] },
+      options:{ responsive:true, indexAxis:'y', plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true}} }
+    });
+
+    document.getElementById('repVehTable').innerHTML = rows.map(r=>`
+      <tr>
+        <td>${r.id} · ${esc(r.label)}</td><td>${r.rentals}</td><td>${formatInteger(r.miles)}</td>
+        <td>${formatCurrency(r.gross)}</td><td>${formatCurrency(r.net)}</td>
+        <td>${formatCurrency(r.maintCost)}</td>
+        <td style="color:${r.profit>=0?'var(--success)':'var(--danger)'};font-weight:800">${formatCurrency(r.profit)}</td>
+      </tr>`).join('') || '<tr><td colspan="7" class="history-empty">Sin vehículos.</td></tr>';
+  }
+
+  // ---------- MANTENIMIENTO ----------
+
+  function maintenanceReportRows(){
+    return Object.values(maintenanceRecords).filter(m=>inReportRange(m.date));
+  }
+
+  function renderMaintenanceReport(){
+    const rows = maintenanceReportRows();
+    const total = rows.reduce((s,m)=>s+(Number(m.cost)||0),0);
+    document.getElementById('repMaintTotal').textContent = formatCurrency(total);
+    document.getElementById('repMaintCount').textContent = rows.length;
+    document.getElementById('repMaintAvg').textContent = formatCurrency(rows.length ? total/rows.length : 0);
+
+    // Por tipo
+    const byType = {};
+    rows.forEach(m=>{ byType[m.type||'Otro'] = (byType[m.type||'Otro']||0) + (Number(m.cost)||0); });
+    destroyChart('repMaintTypeChart');
+    reportCharts.repMaintTypeChart = new Chart(document.getElementById('repMaintTypeChart'), {
+      type:'pie',
+      data:{ labels: Object.keys(byType), datasets:[{
+        data: Object.values(byType),
+        backgroundColor:['#304bff','#23915b','#b87900','#c73c4a','#6b7280','#8b5cf6','#0891b2']
+      }]},
+      options:{ responsive:true, plugins:{legend:{position:'bottom'}} }
+    });
+
+    // Por vehículo
+    const byVehicle = {};
+    rows.forEach(m=>{
+      const v = vehicleRecords[m.vehicleId];
+      const label = v ? `${v.year} ${v.make} ${v.model}` : m.vehicleId;
+      byVehicle[label] = (byVehicle[label]||0) + (Number(m.cost)||0);
+    });
+    destroyChart('repMaintVehicleChart');
+    reportCharts.repMaintVehicleChart = new Chart(document.getElementById('repMaintVehicleChart'), {
+      type:'bar',
+      data:{ labels: Object.keys(byVehicle), datasets:[{ label:'Costo', data: Object.values(byVehicle), backgroundColor:'#b87900' }] },
+      options:{ responsive:true, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}} }
+    });
+
+    // Próximos mantenimientos (por millaje) — no depende del rango de fecha,
+    // es siempre el estado actual de la flota.
+    const upcoming = Object.values(vehicleRecords).map(v=>{
+      const remaining = (Number(v.nextOil)||0) - (Number(v.mileage)||0);
+      let status = 'ok', statusLabel = 'Al día';
+      if(v.nextOil){
+        if(remaining <= 0){ status='expired'; statusLabel='Vencido'; }
+        else if(remaining <= 500){ status='soon'; statusLabel='Próximo'; }
+      } else { status='unknown'; statusLabel='Sin datos'; }
+      return { id:v.id, label:`${v.year} ${v.make} ${v.model}`, mileage:v.mileage, nextOil:v.nextOil, remaining, status, statusLabel };
+    }).sort((a,b)=>a.remaining-b.remaining);
+
+    document.getElementById('repMaintUpcoming').textContent = upcoming.filter(u=>u.status==='soon'||u.status==='expired').length;
+    document.getElementById('repMaintUpcomingTable').innerHTML = upcoming.map(u=>`
+      <tr>
+        <td>${u.id} · ${esc(u.label)}</td><td>${formatInteger(u.mileage)}</td>
+        <td>${u.nextOil?formatInteger(u.nextOil):'—'}</td>
+        <td>${u.nextOil?formatInteger(Math.max(0,u.remaining)):'—'}</td>
+        <td>—</td>
+        <td><span class="compliance-badge ${u.status}">${u.statusLabel}</span></td>
+      </tr>`).join('') || '<tr><td colspan="6" class="history-empty">Sin vehículos.</td></tr>';
+  }
+
+  // ---------- VENCIMIENTOS (seguro / registración) ----------
+
+  function complianceStatus(dateStr){
+    if(!dateStr) return { status:'unknown', label:'Sin datos', days:null };
+    const days = Math.round((parseLocalDate(dateStr) - DASHBOARD_TODAY) / 86400000);
+    if(days < 0) return { status:'expired', label:'Vencido', days };
+    if(days <= 30) return { status:'soon', label:`Vence en ${days} día${days===1?'':'s'}`, days };
+    return { status:'ok', label:'Al día', days };
+  }
+
+  function complianceReportRows(){
+    return Object.values(vehicleRecords).map(v=>{
+      const reg = complianceStatus(v.registrationExp);
+      const ins = complianceStatus(v.insuranceExp);
+      const worstDays = [reg.days, ins.days].filter(d=>d!==null);
+      return {
+        id:v.id, label:`${v.year} ${v.make} ${v.model}`,
+        registrationExp:v.registrationExp, reg,
+        insuranceExp:v.insuranceExp, ins,
+        sortKey: worstDays.length ? Math.min(...worstDays) : Infinity
+      };
+    }).sort((a,b)=>a.sortKey-b.sortKey);
+  }
+
+  function renderComplianceReport(){
+    const rows = complianceReportRows();
+    const all = rows.flatMap(r=>[r.reg,r.ins]);
+    document.getElementById('repCompExpired').textContent = all.filter(s=>s.status==='expired').length;
+    document.getElementById('repCompSoon').textContent = all.filter(s=>s.status==='soon').length;
+    document.getElementById('repCompOk').textContent = all.filter(s=>s.status==='ok').length;
+    document.getElementById('repCompTotal').textContent = rows.filter(r=>r.registrationExp||r.insuranceExp).length;
+
+    document.getElementById('repCompTable').innerHTML = rows.map(r=>`
+      <tr>
+        <td>${r.id} · ${esc(r.label)}</td>
+        <td>${r.registrationExp?formatShortDate(r.registrationExp):'—'}</td>
+        <td><span class="compliance-badge ${r.reg.status}">${r.reg.label}</span></td>
+        <td>${r.insuranceExp?formatShortDate(r.insuranceExp):'—'}</td>
+        <td><span class="compliance-badge ${r.ins.status}">${r.ins.label}</span></td>
+      </tr>`).join('') || '<tr><td colspan="5" class="history-empty">Sin vehículos.</td></tr>';
+  }
+
+  // ---------- EXPORTAR A EXCEL (SheetJS) ----------
+
+  function reportExportSpec(type){
+    if(type==='financial'){
+      const rows = financialReportRows();
+      return {
+        filename: 'reporte-financiero',
+        title: 'Reporte Financiero',
+        headers: ['Renta','Vehículo','Canal','Fecha','Gross','Platform fee','Net'],
+        rows: rows.map(r=>[r.id, r.vehicle, r.source, r.startDate, bookingRevenue(r), r.turoFee||0, r.status==='closed'?(r.net||0):rentalNet(r)])
+      };
+    }
+    if(type==='vehicles'){
+      const rows = vehicleReportRows();
+      return {
+        filename: 'reporte-por-vehiculo',
+        title: 'Reporte por Vehículo',
+        headers: ['Vehículo','Rentas','Millas','Gross','Net','Mantenimiento','Ganancia real'],
+        rows: rows.map(r=>[`${r.id} · ${r.label}`, r.rentals, r.miles, r.gross, r.net, r.maintCost, r.profit])
+      };
+    }
+    if(type==='maintenance'){
+      const rows = maintenanceReportRows();
+      return {
+        filename: 'reporte-mantenimiento',
+        title: 'Reporte de Mantenimiento',
+        headers: ['Vehículo','Tipo','Fecha','Millaje','Costo','Vendor'],
+        rows: rows.map(m=>{
+          const v = vehicleRecords[m.vehicleId];
+          return [v?`${v.year} ${v.make} ${v.model}`:m.vehicleId, m.type, m.date, m.mileage, m.cost, m.vendor||''];
+        })
+      };
+    }
+    if(type==='compliance'){
+      const rows = complianceReportRows();
+      return {
+        filename: 'reporte-vencimientos',
+        title: 'Reporte de Vencimientos',
+        headers: ['Vehículo','Registración vence','Estado','Seguro vence','Estado'],
+        rows: rows.map(r=>[r.label, r.registrationExp||'—', r.reg.label, r.insuranceExp||'—', r.ins.label])
+      };
+    }
+    return null;
+  }
+
+  function exportReportExcel(type){
+    const spec = reportExportSpec(type);
+    if(!spec || !spec.rows.length){ alert('No hay datos para exportar en este período.'); return; }
+    const ws = XLSX.utils.aoa_to_sheet([spec.headers, ...spec.rows]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, spec.title.slice(0,31));
+    XLSX.writeFile(wb, `SRQ-${spec.filename}-${todayISO_()}.xlsx`);
+  }
+
+  // ---------- EXPORTAR A PDF (jsPDF + autotable), con logo ----------
+
+  function logoDataUrl(){
+    return new Promise((resolve)=>{
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = ()=>{
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width; canvas.height = img.height;
+        canvas.getContext('2d').drawImage(img,0,0);
+        try{ resolve(canvas.toDataURL('image/jpeg')); }
+        catch(e){ resolve(null); } // si falla por CORS, seguimos sin logo
+      };
+      img.onerror = ()=>resolve(null);
+      img.src = 'logo.jpg';
+    });
+  }
+
+  async function exportReportPDF(type){
+    const spec = reportExportSpec(type);
+    if(!spec || !spec.rows.length){ alert('No hay datos para exportar en este período.'); return; }
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation:'landscape' });
+    const logo = await logoDataUrl();
+
+    if(logo){ doc.addImage(logo, 'JPEG', 14, 10, 18, 18); }
+    doc.setFontSize(16);
+    doc.setFont(undefined,'bold');
+    doc.text(spec.title, logo ? 36 : 14, 20);
+    doc.setFontSize(10);
+    doc.setFont(undefined,'normal');
+    doc.text('SRQ Rental Car · Fleet Operations', logo ? 36 : 14, 26);
+    doc.text(`Generado: ${new Date().toLocaleDateString()} · Período: ${document.getElementById('reportPeriodLabel')?.textContent||''}`, logo ? 36 : 14, 31);
+
+    doc.autoTable({
+      startY: 38,
+      head: [spec.headers],
+      body: spec.rows.map(row=>row.map(cell=>typeof cell==='number' ? cell.toLocaleString('en-US',{maximumFractionDigits:2}) : cell)),
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [48,75,255] }
+    });
+
+    doc.save(`SRQ-${spec.filename}-${todayISO_()}.pdf`);
+  }
 
 </script>
 
