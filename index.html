@@ -3095,7 +3095,7 @@ table thead th.sortable-th.sort-desc{
           <div class="form-section-head"><div><h3>Turo details</h3><p>Solo aparece para rentas originadas en Turo.</p></div></div>
           <div class="form-grid">
             <div class="field"><label>Turo Trip ID</label><input id="nrTuroTripId" placeholder="Trip / reservation ID"></div>
-            <div class="field"><label>Turo platform fee</label><input id="nrTuroFee" type="number" min="0" step=".01" value="0" oninput="recalcNewRental()"></div>
+            <div class="field"><label>Turo host fee / platform deduction ($)</label><input id="nrTuroFee" type="number" min="0" step=".01" value="0" oninput="recalcNewRental()"><div class="form-hint">Monto que Turo descuenta de los earnings de SRQ para esta reservación.</div></div>
           </div>
         </div>
       </div>
@@ -3110,13 +3110,37 @@ table thead th.sortable-th.sort-desc{
           <div class="field"><label>Millas salida *</label><input id="nrMilesOut" type="number" min="0" required></div>
           <div class="field"><label>Gasolina salida</label><select id="nrGasOut"><option>Full</option><option>3/4</option><option>1/2</option><option>1/4</option></select></div>
         </div>
+
+        <div class="mileage-policy-booking">
+          <div class="section-title">Política de millaje</div>
+          <div class="form-grid">
+            <div class="field">
+              <label>Millas permitidas por día</label>
+              <input id="nrAllowedMilesPerDay" type="number" min="0" step="1" placeholder="Ej. 200" oninput="recalcNewRental()">
+              <div class="form-hint">Déjalo vacío si esta renta no tiene límite de millas.</div>
+            </div>
+            <div class="field">
+              <label>Tarifa por milla extra ($ / mi)</label>
+              <input id="nrExtraMileRate" type="number" min="0" step=".01" placeholder="Ej. 0.45" oninput="recalcNewRental()">
+              <div class="form-hint">Opcional. Si la defines, el Check-In calcula el fee automáticamente.</div>
+            </div>
+          </div>
+          <div class="mileage-policy-preview" id="nrMileagePolicyPreview">
+            Define las millas permitidas para calcular el allowance total de la reservación.
+          </div>
+        </div>
       </div>
 
       <div class="form-section">
         <div class="form-section-head"><div><h3>4. Pricing inicial</h3><p>Registra aquí únicamente el precio acordado al crear la reserva.</p></div></div>
         <div class="form-grid">
-          <div class="field"><label>Rental charge *</label><input id="nrGross" type="number" min="0" step=".01" required placeholder="450.00" oninput="recalcNewRental()"></div>
-          <div class="field"><label>Discount</label><input id="nrDiscount" type="number" min="0" step=".01" value="0" oninput="recalcNewRental()"></div>
+          <div class="field"><label>Rental charge ($) *</label><input id="nrGross" type="number" min="0" step=".01" required placeholder="450.00" oninput="recalcNewRental()"></div>
+          <div class="field">
+            <label>Delivery fee ($) · optional</label>
+            <input id="nrDeliveryFee" type="number" min="0" step=".01" value="0" oninput="recalcNewRental()">
+            <div class="form-hint">Úsalo cuando el delivery / pickup charge ya se conoce al crear la reserva.</div>
+          </div>
+          <div class="field"><label>Discount ($)</label><input id="nrDiscount" type="number" min="0" step=".01" value="0" oninput="recalcNewRental()"></div>
         </div>
 
         <div class="rental-pricing-note">
@@ -3169,11 +3193,12 @@ table thead th.sortable-th.sort-desc{
       <div class="form-section">
         <div class="field full"><label>Rental notes</label><textarea id="nrNotes" placeholder="Delivery, airport, condition, special terms, observations..."></textarea></div>
         <div class="rental-preview">
-          <div class="preview-grid">
+          <div class="preview-grid booking-preview-grid">
             <div class="preview-stat"><small>Días</small><strong id="nrPreviewDays">—</strong></div>
-            <div class="preview-stat"><small>Gross</small><strong id="nrPreviewGross">$0</strong></div>
-            <div class="preview-stat"><small>Platform fee</small><strong id="nrPreviewPlatform">$0</strong></div>
-            <div class="preview-stat"><small>Projected rental net</small><strong id="nrPreviewNet">$0</strong></div>
+            <div class="preview-stat"><small>Millas permitidas</small><strong id="nrPreviewAllowedMiles">—</strong></div>
+            <div class="preview-stat"><small>Rental + delivery</small><strong id="nrPreviewGross">$0.00</strong></div>
+            <div class="preview-stat"><small>Platform deduction</small><strong id="nrPreviewPlatform">$0.00</strong></div>
+            <div class="preview-stat"><small>Projected rental net</small><strong id="nrPreviewNet">$0.00</strong></div>
           </div>
           <div class="rental-preview-footnote">No incluye cargos que puedan generarse al regresar el vehículo.</div>
         </div>
@@ -3246,7 +3271,28 @@ table thead th.sortable-th.sort-desc{
         </div>
         <div class="field">
           <label>Millas de entrada</label>
-          <input id="milesIn" type="number" placeholder="Ej. 38845" oninput="updateCheckin()" required>
+          <input id="milesIn" type="number" placeholder="Ej. 38,845" oninput="updateCheckin()" required>
+        </div>
+      </div>
+
+      <div class="mileage-checkin-card" id="mileageAllowanceCard">
+        <div class="mileage-checkin-title">
+          <div>
+            <div class="eyebrow">Mileage allowance</div>
+            <strong>Control de millas de la reservación</strong>
+          </div>
+          <span class="mileage-result-badge" id="mileageResultBadge">Pendiente</span>
+        </div>
+        <div class="mileage-checkin-grid">
+          <div><small>Días</small><strong id="ciMileageDays">—</strong></div>
+          <div><small>Permitidas / día</small><strong id="ciMilesPerDay">—</strong></div>
+          <div><small>Total permitido</small><strong id="ciAllowedMiles">—</strong></div>
+          <div><small>Millas usadas</small><strong id="ciMilesDriven">—</strong></div>
+          <div><small>Millas extra</small><strong id="ciExtraMiles">—</strong></div>
+          <div><small>Tarifa / milla</small><strong id="ciExtraMileRate">—</strong></div>
+        </div>
+        <div class="mileage-calculation-line" id="ciMileageCalculation">
+          Ingresa las millas de entrada para calcular el uso.
         </div>
       </div>
 
@@ -3280,8 +3326,9 @@ table thead th.sortable-th.sort-desc{
           <input id="cleaningFee" type="number" step=".01" value="0" oninput="updateCheckin()">
         </div>
         <div class="field">
-          <label>Extra mileage fee</label>
+          <label>Extra mileage fee ($)</label>
           <input id="mileageFee" type="number" step=".01" value="0" oninput="updateCheckin()">
+          <div class="form-hint" id="mileageFeeHelper">Se calcula automáticamente cuando existe una tarifa por milla extra.</div>
         </div>
         <div class="field">
           <label>Other fee · Tolls / Smoking / Other</label>
@@ -3372,11 +3419,14 @@ table thead th.sortable-th.sort-desc{
       <div class="profile-box"><small>Millas salida</small><strong id="profileMilesOut">28,702</strong></div>
       <div class="profile-box"><small>Millas regreso</small><strong id="profileMilesIn">29,114</strong></div>
       <div class="profile-box"><small>Millas utilizadas</small><strong id="profileMilesUsed">412</strong></div>
+      <div class="profile-box"><small>Millas permitidas / día</small><strong id="profileMilesPerDay">—</strong></div>
+      <div class="profile-box"><small>Total permitido</small><strong id="profileAllowedMiles">—</strong></div>
+      <div class="profile-box"><small>Millas extra</small><strong id="profileExtraMiles">—</strong></div>
       <div class="profile-box"><small>Gasolina regreso</small><strong id="profileFuel">Full</strong></div>
     </div>
 
     <div class="money-panel">
-      <div><small>Ingreso bruto</small><strong id="profileGross">$387.00</strong></div>
+      <div><small>Rental + delivery</small><strong id="profileGross">$387.00</strong></div>
       <div><small>Fees / ajustes</small><strong id="profileFees">-$96.75</strong></div>
       <div><small>Neto</small><strong id="profileNet">$290.25</strong></div>
     </div>
@@ -4144,7 +4194,7 @@ table thead th.sortable-th.sort-desc{
   function refreshDashboard(){
     const allRentals = Object.entries(rentals).map(([id, r]) => ({ id, ...r }));
     const rows = allRentals.filter(r => rentalTouchesRangeReal(r, dashboardRange.start, dashboardRange.end));
-    const gross = rows.reduce((sum, r) => sum + (Number(r.gross) || 0), 0);
+    const gross = rows.reduce((sum, r) => sum + bookingRevenue(r), 0);
     const fees = rows.reduce((sum, r) => sum + rentalTotalFees(r), 0);
     const activeNow = allRentals.filter(r => r.status === 'active').length;
 
@@ -4762,7 +4812,7 @@ table thead th.sortable-th.sort-desc{
         <td>${esc(m.type)}</td>
         <td>${prettyDate(m.date)}</td>
         <td>${Number(m.mileage||0).toLocaleString()}</td>
-        <td>$${Number(m.cost||0).toFixed(2)}</td>
+        <td>${formatCurrency(m.cost)}</td>
         <td>${m.nextMileage ? Number(m.nextMileage).toLocaleString()+' mi' : '—'}</td>
         <td>${esc(m.notes) || '—'}</td>
       </tr>
@@ -4787,7 +4837,7 @@ table thead th.sortable-th.sort-desc{
     document.getElementById('maintMeta').textContent = `${r.vehicleId} · Servicio ${r.status.toLowerCase()}`;
     document.getElementById('maintDate').textContent = prettyDate(r.date);
     document.getElementById('maintMileage').textContent = `${r.mileage.toLocaleString()} mi`;
-    document.getElementById('maintCost').textContent = `$${r.cost.toFixed(2)}`;
+    document.getElementById('maintCost').textContent = formatCurrency(r.cost);
     document.getElementById('maintVendor').textContent = r.vendor || '—';
     document.getElementById('maintNext').textContent = r.nextMileage ? `${r.nextMileage.toLocaleString()} mi` : '—';
     document.getElementById('maintStatus').textContent = r.status;
@@ -5236,6 +5286,38 @@ table thead th.sortable-th.sort-desc{
     return `<span class="status ${s[0]}">${s[1]}</span>`;
   }
 
+  const USD_FORMATTER = new Intl.NumberFormat('en-US',{
+    style:'currency',currency:'USD',minimumFractionDigits:2,maximumFractionDigits:2
+  });
+  const INTEGER_FORMATTER = new Intl.NumberFormat('en-US',{maximumFractionDigits:0});
+
+  function formatCurrency(n){
+    return USD_FORMATTER.format(Number(n)||0);
+  }
+
+  function formatInteger(n){
+    const value=Number(n);
+    return Number.isFinite(value) ? INTEGER_FORMATTER.format(value) : '0';
+  }
+
+  function readAppNumber(id){
+    const el=document.getElementById(id);
+    if(!el) return 0;
+    const cleaned=String(el.value||'').replace(/[$,\s]/g,'');
+    const n=parseFloat(cleaned);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  function bookingRevenue(r){
+    return (Number(r?.gross)||0) + (Number(r?.deliveryFee)||0);
+  }
+
+  function rentalAllowedMiles(r){
+    const perDay=Number(r?.allowedMilesPerDay)||0;
+    const days=Number(r?.days)||0;
+    return perDay>0 && days>0 ? perDay*days : 0;
+  }
+
   function shortMoney(n){
     if(Math.abs(n)>=1000) return '$'+(n/1000).toFixed(1).replace('.0','')+'K';
     return '$'+Number(n||0).toLocaleString();
@@ -5300,7 +5382,7 @@ table thead th.sortable-th.sort-desc{
   function customerDirectoryStats(c){
     const rs = customerRentals(c.id);
     const claims = customerClaims(c.id);
-    const revenue = rs.reduce((s,r)=>s+Number(r.gross||0),0);
+    const revenue = rs.reduce((s,r)=>s+bookingRevenue(r),0);
     const outstanding = claims
       .filter(i=>!['Paid','Denied','Closed'].includes(i.status))
       .reduce((s,i)=>s+Number(i.amount||0),0);
@@ -5518,9 +5600,9 @@ table thead th.sortable-th.sort-desc{
           <td>${formatShortDate(r.scheduledReturnDate)} · ${formatTime(r.returnTime || r.scheduledReturnTime)}</td>
           <td>${r.days || '—'}</td>
           <td>${used==null ? '—' : used.toLocaleString()}</td>
-          <td>$${Number(r.gross||0).toFixed(2)}</td>
-          <td>${fees ? '$'+fees.toFixed(2) : '—'}</td>
-          <td>${net==null ? '—' : '$'+Number(net).toFixed(2)}</td>
+          <td>${formatCurrency(bookingRevenue(r))}</td>
+          <td>${fees ? formatCurrency(fees) : '—'}</td>
+          <td>${net==null ? '—' : formatCurrency(net)}</td>
           <td>${status}</td>
         </tr>
       `);
@@ -5865,7 +5947,7 @@ table thead th.sortable-th.sort-desc{
   }
 
   function rentalNet(r){
-    const gross=Number(r.gross)||0;
+    const gross=bookingRevenue(r);
     const platform=Number(r.turoFee)||0;
     const discount=Number(r.discount)||0;
     const extra=(Number(r.lateFee)||0)+(Number(r.fuelFee)||0)+(Number(r.cleaningFee)||0)+(Number(r.mileageFee)||0)+(Number(r.otherFee)||0);
@@ -6037,7 +6119,7 @@ table thead th.sortable-th.sort-desc{
     }
     const rs=customerRentals(c.id);
     const claims=customerClaims(c.id);
-    const gross=rs.reduce((s,r)=>s+Number(r.gross||0),0);
+    const gross=rs.reduce((s,r)=>s+bookingRevenue(r),0);
     const outstanding=claims.filter(i=>!['Paid','Denied','Closed'].includes(i.status)).reduce((s,i)=>s+Number(i.amount||0),0);
 
     document.getElementById('cpId').textContent=c.id;
@@ -6070,7 +6152,7 @@ table thead th.sortable-th.sort-desc{
                 <small>${sourceMarkup(r.source)} · ${formatShortDate(r.startDate)} → ${formatShortDate(r.scheduledReturnDate)}</small>
               </div>
               <div>
-                <small>Gross $${Number(r.gross||0).toFixed(2)} · Net $${rentalNet(r).toFixed(2)}</small>
+                <small>Gross ${formatCurrency(bookingRevenue(r))} · Net ${formatCurrency(rentalNet(r))}</small>
               </div>
               <div class="customer-recent-money">${status}</div>
             </div>`;
@@ -6085,14 +6167,14 @@ table thead th.sortable-th.sort-desc{
       return `<tr class="clickable" onclick="${action}">
         <td><strong>${r.id}</strong></td><td>${sourceMarkup(r.source)}</td><td>${esc(r.vehicle)}</td>
         <td>${formatShortDate(r.startDate)} → ${formatShortDate(r.scheduledReturnDate)}</td>
-        <td>$${Number(r.gross||0).toFixed(2)}</td><td>$${rentalNet(r).toFixed(2)}</td><td>${status}</td>
+        <td>${formatCurrency(bookingRevenue(r))}</td><td>$${rentalNet(r).toFixed(2)}</td><td>${status}</td>
       </tr>`;
     }).join(''):'<tr><td colspan="7">No rentals yet.</td></tr>';
 
     document.getElementById('customerClaims').innerHTML=claims.length?claims.map(i=>`
       <div class="claim-card">
         <div><strong>${i.id} · ${i.type}</strong><small>${i.rentalId||'No rental'} · ${i.responsible} · ${prettyDate(i.date)}</small>
-        <div style="margin-top:7px;font-size:13px">$${Number(i.amount).toFixed(2)} · ${esc(i.notes)||''}</div>
+        <div style="margin-top:7px;font-size:13px">${formatCurrency(i.amount)} · ${esc(i.notes)||''}</div>
         ${(i.evidence||[]).length?`<div style="margin-top:7px">${(i.evidence||[]).map(f=>fileLink(f)).join('')}</div>`:''}</div>
         <span class="claim-status ${i.status.toLowerCase()}">${i.status}</span>
       </div>`).join(''):'<div class="history-empty">No claims or invoices for this customer.</div>';
@@ -6479,8 +6561,8 @@ table thead th.sortable-th.sort-desc{
         <td><strong>${r.id}</strong></td><td>${esc(customerFullName(r.customerId))}</td><td>${sourceMarkup(r.source)}</td>
         <td>${esc(r.vehicle)}</td><td>${formatShortDate(r.startDate)} · ${formatTime(r.startTime)}</td>
         <td>${formatShortDate(r.scheduledReturnDate)} · ${formatTime(r.returnTime||r.scheduledReturnTime)}</td>
-        <td>${r.days||'—'}</td><td>$${Number(r.gross||0).toFixed(2)}</td>
-        <td>${platform?'$'+platform.toFixed(2):'—'}</td><td>${r.status==='active'?'—':'$'+rentalNet(r).toFixed(2)}</td><td>${status}</td>
+        <td>${r.days||'—'}</td><td>${formatCurrency(bookingRevenue(r))}</td>
+        <td>${platform?formatCurrency(platform):'—'}</td><td>${r.status==='active'?'—':formatCurrency(rentalNet(r))}</td><td>${status}</td>
       </tr>`;
     }).join('');
   }
@@ -6507,13 +6589,16 @@ table thead th.sortable-th.sort-desc{
     const outstanding=customerClaims(c.id).filter(i=>!['Paid','Denied','Closed'].includes(i.status)).reduce((s,i)=>s+Number(i.amount||0),0);
     if(c.standing==='blocked'||c.standing==='review'||outstanding>0){
       warn.classList.add('show');
-      warn.innerHTML=`${standingMarkup(c.standing)} ${outstanding?` · <strong>$${outstanding.toFixed(2)} outstanding</strong>`:''}<br>Review customer history before creating the rental.`;
+      warn.innerHTML=`${standingMarkup(c.standing)} ${outstanding?` · <strong>${formatCurrency(outstanding)} outstanding</strong>`:''}<br>Review customer history before creating the rental.`;
     }else warn.classList.remove('show');
   }
 
   function syncRentalVehicle(){
     const v=vehicleRecords[document.getElementById('nrVehicle').value];
-    if(v) document.getElementById('nrMilesOut').value=v.mileage;
+    if(v){
+      document.getElementById('nrMilesOut').value=v.mileage;
+      refreshPrettyNumberInput('nrMilesOut');
+    }
   }
 
   function selectRentalSource(source,btn){
@@ -6559,19 +6644,43 @@ table thead th.sortable-th.sort-desc{
   }
 
   function recalcNewRental(){
-    const gross=parseFloat(document.getElementById('nrGross')?.value)||0;
-    const platform=document.getElementById('nrSource')?.value==='Turo'?(parseFloat(document.getElementById('nrTuroFee')?.value)||0):0;
-    const discount=parseFloat(document.getElementById('nrDiscount')?.value)||0;
+    const gross=readAppNumber('nrGross');
+    const delivery=readAppNumber('nrDeliveryFee');
+    const platform=document.getElementById('nrSource')?.value==='Turo'?readAppNumber('nrTuroFee'):0;
+    const discount=readAppNumber('nrDiscount');
+    const milesPerDay=readAppNumber('nrAllowedMilesPerDay');
+    const extraMileRate=readAppNumber('nrExtraMileRate');
+
     let days='—';
-    const s=document.getElementById('nrStartDate')?.value,e=document.getElementById('nrEndDate')?.value;
-    if(s&&e)days=Math.max(1,Math.ceil((new Date(e)-new Date(s))/86400000));
+    let allowedMiles=0;
+    const s=document.getElementById('nrStartDate')?.value;
+    const e=document.getElementById('nrEndDate')?.value;
+
+    if(s&&e){
+      days=Math.max(1,Math.ceil((new Date(e)-new Date(s))/86400000));
+      if(milesPerDay>0) allowedMiles=days*milesPerDay;
+    }
+
     document.getElementById('nrPreviewDays').textContent=days;
-    document.getElementById('nrPreviewGross').textContent='$'+gross.toFixed(2);
-    document.getElementById('nrPreviewPlatform').textContent=platform?'-$'+platform.toFixed(2):'$0.00';
-    const projectedNet = gross-platform-discount;
-    document.getElementById('nrPreviewNet').textContent='$'+projectedNet.toFixed(2);
+    document.getElementById('nrPreviewAllowedMiles').textContent=allowedMiles>0?formatInteger(allowedMiles):'Unlimited';
+    document.getElementById('nrPreviewGross').textContent=formatCurrency(gross+delivery);
+    document.getElementById('nrPreviewPlatform').textContent=platform?'-'+formatCurrency(platform):formatCurrency(0);
+
+    const projectedNet = gross+delivery-platform-discount;
+    document.getElementById('nrPreviewNet').textContent=formatCurrency(projectedNet);
     const stickyNet = document.getElementById('nrStickyNet');
-    if(stickyNet) stickyNet.textContent='$'+projectedNet.toFixed(2);
+    if(stickyNet) stickyNet.textContent=formatCurrency(projectedNet);
+
+    const policy=document.getElementById('nrMileagePolicyPreview');
+    if(policy){
+      if(milesPerDay>0 && days!=='—'){
+        policy.innerHTML=
+          `<strong>${formatInteger(milesPerDay)} mi/día × ${days} día${days===1?'':'s'} = ${formatInteger(allowedMiles)} millas permitidas.</strong>` +
+          (extraMileRate>0 ? ` Overage: <strong>${formatCurrency(extraMileRate)} / mi</strong>.` : ' Sin tarifa automática por milla extra.');
+      }else{
+        policy.textContent='Sin límite de millas configurado para esta reservación.';
+      }
+    }
   }
 
   function nextRentalId(){
@@ -6588,31 +6697,40 @@ table thead th.sortable-th.sort-desc{
     const vehicleId=document.getElementById('nrVehicle').value;
     const source=document.getElementById('nrSource').value;
     const c=customers[customerId],v=vehicleRecords[vehicleId];
-    const gross=parseFloat(document.getElementById('nrGross').value);
+    const gross=readAppNumber('nrGross');
     if(!c||!v||Number.isNaN(gross)){alert('Selecciona cliente, vehículo y rental charge.');return;}
     if(c.standing==='blocked'&&!confirm('Este cliente está marcado Do Not Rent. ¿Continuar de todos modos?'))return;
 
     const startDate=document.getElementById('nrStartDate').value,endDate=document.getElementById('nrEndDate').value;
     if(!startDate||!endDate||new Date(startDate)>new Date(endDate)){alert('Revisa las fechas de la renta.');return;}
-    const platform=source==='Turo'?(parseFloat(document.getElementById('nrTuroFee').value)||0):0;
-    const discount=parseFloat(document.getElementById('nrDiscount').value)||0;
+    const platform=source==='Turo'?readAppNumber('nrTuroFee'):0;
+    const discount=readAppNumber('nrDiscount');
+    const deliveryFee=readAppNumber('nrDeliveryFee');
+    const allowedMilesPerDay=readAppNumber('nrAllowedMilesPerDay');
+    const extraMileRate=readAppNumber('nrExtraMileRate');
     const days=Math.max(1,Math.ceil((new Date(endDate)-new Date(startDate))/86400000));
-    const net=gross-platform-discount;
+    const net=gross+deliveryFee-platform-discount;
 
-    if(!confirm(`Crear esta renta?\n\n${customerFullName(customerId)}\n${v.year} ${v.make} ${v.model}\nCanal: ${source}\nGross: $${gross.toFixed(2)}\nProjected net: $${net.toFixed(2)}`))return;
+    if(!confirm(
+      `Crear esta renta?\n\n${customerFullName(customerId)}\n${v.year} ${v.make} ${v.model}\nCanal: ${source}` +
+      `\nRental charge: ${formatCurrency(gross)}` +
+      `\nDelivery fee: ${formatCurrency(deliveryFee)}` +
+      `\nMillas permitidas: ${allowedMilesPerDay>0 ? formatInteger(allowedMilesPerDay*days)+' total' : 'Unlimited'}` +
+      `\nProjected net: ${formatCurrency(net)}`
+    ))return;
 
     const payload={
       customerId,source,vehicleId,vehicle:`${v.make} ${v.model}`,year:v.year,
       startDate,start:formatShortDate(startDate),startTime:document.getElementById('nrStartTime').value,
       scheduledReturnDate:endDate,expected:formatShortDate(endDate),scheduledReturnTime:document.getElementById('nrEndTime').value,
-      returnDate:endDate,returnTime:'',days,milesOut:parseInt(document.getElementById('nrMilesOut').value,10)||v.mileage,
+      returnDate:endDate,returnTime:'',days,allowedMilesPerDay,extraMileRate,deliveryFee,milesOut:readAppNumber('nrMilesOut')||v.mileage,
       gasOut:document.getElementById('nrGasOut').value,gross,turoFee:platform,turoTripId:source==='Turo'?document.getElementById('nrTuroTripId').value.trim():'',
       // Return-related fees always begin at zero. They are entered at Check-In.
       discount,lateFee:0,fuelFee:0,cleaningFee:0,mileageFee:0,otherFee:0,
       protection:document.getElementById('nrProtection').value,insuranceCompany:document.getElementById('nrInsuranceCompany').value.trim(),
-      policy:document.getElementById('nrPolicy').value.trim(),deductible:parseFloat(document.getElementById('nrDeductible').value)||0,
-      depositRequired:source==='Private'?(parseFloat(document.getElementById('nrDepositRequired').value)||0):0,
-      depositCollected:source==='Private'?(parseFloat(document.getElementById('nrDepositCollected').value)||0):0,
+      policy:document.getElementById('nrPolicy').value.trim(),deductible:readAppNumber('nrDeductible'),
+      depositRequired:source==='Private'?readAppNumber('nrDepositRequired'):0,
+      depositCollected:source==='Private'?readAppNumber('nrDepositCollected'):0,
       paymentMethod:source==='Private'?document.getElementById('nrPaymentMethod').value:'',
       contractStatus:source==='Private'?document.getElementById('nrContractStatus').value:'',
       notes:document.getElementById('nrNotes').value.trim(),net,status:'active',
@@ -6681,8 +6799,12 @@ table thead th.sortable-th.sort-desc{
     document.getElementById('nrStartTime').value='10:00';
     document.getElementById('nrEndTime').value='10:00';
     document.getElementById('nrTuroFee').value='0';
+    document.getElementById('nrDeliveryFee').value='0';
     document.getElementById('nrDiscount').value='0';
+    document.getElementById('nrAllowedMilesPerDay').value='';
+    document.getElementById('nrExtraMileRate').value='';
     toggleProtectionFields();recalcNewRental();
+    ['nrTuroFee','nrDeliveryFee','nrDiscount'].forEach(refreshPrettyNumberInput);
     const rentalDrawer = document.getElementById('newRentalDrawer');
     rentalDrawer.classList.add('open');
     document.body.style.overflow='hidden';
@@ -6704,13 +6826,15 @@ table thead th.sortable-th.sort-desc{
     document.getElementById('checkinRentalChip').textContent = `${rentalId} · ${r.vehicle} · ${r.vehicleId}`;
     document.getElementById('rentalContext').innerHTML =
       `<strong>${esc(customerFullName(r.customerId))}</strong> · ${r.source || 'Other'}<br>` +
-      `Salió con <strong>${r.milesOut.toLocaleString()} millas</strong> · Gasolina: <strong>${r.gasOut}</strong> · Regreso esperado: <strong>${r.expected}</strong>`;
+      `Salió con <strong>${formatInteger(r.milesOut)} millas</strong> · Gasolina: <strong>${r.gasOut}</strong> · Regreso esperado: <strong>${r.expected}</strong><br>` +
+      `${Number(r.allowedMilesPerDay)>0 ? `<strong>${formatInteger(r.allowedMilesPerDay)} mi/día</strong> · ${formatInteger(rentalAllowedMiles(r))} mi permitidas` : '<strong>Millaje:</strong> Unlimited'} · Delivery: <strong>${formatCurrency(r.deliveryFee||0)}</strong>`;
     document.getElementById('scheduledStartDate').value = toDateInputValue_(r.startDate);
     document.getElementById('scheduledStartTime').value = r.startTime || '';
     document.getElementById('scheduledReturnDate').value = toDateInputValue_(r.scheduledReturnDate || r.returnDate);
     document.getElementById('scheduledReturnTime').value = r.scheduledReturnTime || '';
     document.getElementById('milesOut').value = r.milesOut;
     document.getElementById('milesIn').value = '';
+    refreshPrettyNumberInput('milesOut');
     document.getElementById('returnDate').value = toDateInputValue_(r.returnDate || r.scheduledReturnDate) || todayISO_();
     document.getElementById('returnTime').value = r.returnTime || r.scheduledReturnTime || '';
     ['lateFee','fuelFee','cleaningFee','mileageFee','otherFee','discount'].forEach(id=>document.getElementById(id).value=0);
@@ -6729,7 +6853,7 @@ table thead th.sortable-th.sort-desc{
   }
 
   function money(id){
-    return parseFloat(document.getElementById(id).value)||0;
+    return readAppNumber(id);
   }
 
   function combineDateTime(dateStr,timeStr){
@@ -6757,8 +6881,10 @@ table thead th.sortable-th.sort-desc{
   function updateCheckin(){
     if(!currentRental) return;
     const r = rentals[currentRental];
-    const milesIn = parseFloat(document.getElementById('milesIn').value);
-    const used = (!isNaN(milesIn)) ? Math.max(0,milesIn-r.milesOut) : null;
+    const milesIn = readAppNumber('milesIn');
+    const hasMilesIn = String(document.getElementById('milesIn')?.value||'').trim()!=='';
+    const milesOut = Number(r.milesOut)||0;
+    const used = hasMilesIn ? Math.max(0,milesIn-milesOut) : null;
 
     const actualDate = document.getElementById('returnDate').value;
     const actualTime = document.getElementById('returnTime').value;
@@ -6769,13 +6895,67 @@ table thead th.sortable-th.sort-desc{
         `Regreso tardío detectado: <strong>${formatLateMinutes(lateMins)}</strong> después de la hora programada. Revisa si corresponde aplicar un Late Return Fee.`;
     }
 
+    // Mileage allowance + automatic overage calculation
+    const days=Number(r.days)||1;
+    const milesPerDay=Number(r.allowedMilesPerDay)||0;
+    const allowed=milesPerDay>0 ? days*milesPerDay : 0;
+    const extraMiles=(used!==null && allowed>0) ? Math.max(0,used-allowed) : 0;
+    const rate=Number(r.extraMileRate)||0;
+    const calculatedMileageFee=extraMiles>0 && rate>0 ? extraMiles*rate : 0;
+    const mileageFeeInput=document.getElementById('mileageFee');
+
+    if(mileageFeeInput){
+      if(allowed>0 && rate>0){
+        mileageFeeInput.value=calculatedMileageFee.toFixed(2);
+        mileageFeeInput.readOnly=true;
+        refreshPrettyNumberInput('mileageFee');
+      }else{
+        mileageFeeInput.readOnly=false;
+      }
+    }
+
+    document.getElementById('ciMileageDays').textContent=days;
+    document.getElementById('ciMilesPerDay').textContent=milesPerDay>0?formatInteger(milesPerDay):'Unlimited';
+    document.getElementById('ciAllowedMiles').textContent=allowed>0?formatInteger(allowed):'Unlimited';
+    document.getElementById('ciMilesDriven').textContent=used===null?'—':formatInteger(used);
+    document.getElementById('ciExtraMiles').textContent=used===null?'—':formatInteger(extraMiles);
+    document.getElementById('ciExtraMileRate').textContent=rate>0?formatCurrency(rate)+'/mi':'—';
+
+    const badge=document.getElementById('mileageResultBadge');
+    const calc=document.getElementById('ciMileageCalculation');
+    const helper=document.getElementById('mileageFeeHelper');
+
+    if(!milesPerDay){
+      badge.textContent='Unlimited';
+      badge.className='mileage-result-badge unlimited';
+      calc.textContent='Esta reservación no tiene límite de millas configurado.';
+      if(helper) helper.textContent='Sin mileage policy: puedes ingresar un fee manual si fuera necesario.';
+    }else if(used===null){
+      badge.textContent='Pendiente';
+      badge.className='mileage-result-badge';
+      calc.textContent=`Allowance: ${formatInteger(allowed)} millas. Ingresa las millas de entrada para comparar.`;
+      if(helper) helper.textContent=rate>0?'El fee se calculará automáticamente.':'No hay tarifa por milla; si existe un cargo, ingrésalo manualmente.';
+    }else if(extraMiles>0){
+      badge.textContent=`+${formatInteger(extraMiles)} mi`;
+      badge.className='mileage-result-badge over';
+      calc.innerHTML=rate>0
+        ? `<strong>${formatInteger(extraMiles)} millas extra × ${formatCurrency(rate)}/mi = ${formatCurrency(calculatedMileageFee)}</strong>`
+        : `<strong>${formatInteger(extraMiles)} millas sobre el allowance.</strong> No hay tarifa automática configurada.`;
+      if(helper) helper.textContent=rate>0?'Calculado automáticamente desde la política guardada en la renta.':'Ingresa manualmente el cargo correspondiente.';
+    }else{
+      badge.textContent='Within limit';
+      badge.className='mileage-result-badge good';
+      calc.innerHTML=`Usó <strong>${formatInteger(used)}</strong> de <strong>${formatInteger(allowed)}</strong> millas permitidas. No hay overage.`;
+      if(helper) helper.textContent='No se genera Extra Mileage Fee.';
+    }
+
     const extras = money('lateFee') + money('fuelFee') + money('cleaningFee') + money('mileageFee') + money('otherFee');
     const discount = money('discount');
-    const final = r.gross + extras - discount;
+    const final = bookingRevenue(r) + extras - discount;
 
-    document.getElementById('milesUsed').textContent = used===null ? '—' : used.toLocaleString();
-    document.getElementById('additionalFees').textContent = '$' + extras.toFixed(2);
-    document.getElementById('finalTotal').textContent = '$' + final.toFixed(2);
+    document.getElementById('milesUsed').textContent = used===null ? '—' : formatInteger(used);
+    document.getElementById('additionalFees').textContent = formatCurrency(extras);
+    document.getElementById('finalTotal').textContent = formatCurrency(final);
   }
 
 
@@ -6804,13 +6984,22 @@ table thead th.sortable-th.sort-desc{
     document.getElementById('profileActualReturn').textContent = `${r.expected} · ${formatTime(r.returnTime)}`;
     const lateMins = minutesLate(r.scheduledReturnDate,r.scheduledReturnTime,r.returnDate,r.returnTime);
     document.getElementById('profileLateDuration').textContent = formatLateMinutes(lateMins);
-    document.getElementById('profileMilesOut').textContent = r.milesOut.toLocaleString();
-    document.getElementById('profileMilesIn').textContent = r.milesIn.toLocaleString();
-    document.getElementById('profileMilesUsed').textContent = (r.milesIn-r.milesOut).toLocaleString();
+    document.getElementById('profileMilesOut').textContent = formatInteger(r.milesOut);
+    document.getElementById('profileMilesIn').textContent = formatInteger(r.milesIn);
+    const profileUsed=Math.max(0,(Number(r.milesIn)||0)-(Number(r.milesOut)||0));
+    const profileAllowed=rentalAllowedMiles(r);
+    const profileExtra=profileAllowed>0?Math.max(0,profileUsed-profileAllowed):0;
+    document.getElementById('profileMilesUsed').textContent = formatInteger(profileUsed);
+    document.getElementById('profileMilesPerDay').textContent = Number(r.allowedMilesPerDay)>0?formatInteger(r.allowedMilesPerDay):'Unlimited';
+    document.getElementById('profileAllowedMiles').textContent = profileAllowed>0?formatInteger(profileAllowed):'Unlimited';
+    document.getElementById('profileExtraMiles').textContent = profileAllowed>0?formatInteger(profileExtra):'—';
     document.getElementById('profileFuel').textContent = r.fuelIn;
-    document.getElementById('profileGross').textContent = `$${r.gross.toFixed(2)}`;
-    document.getElementById('profileFees').textContent = `-$${(r.turoFee + r.lateFee + r.fuelFee + r.cleaningFee + r.otherFee - r.discount).toFixed(2)}`;
-    document.getElementById('profileNet').textContent = `$${r.net.toFixed(2)}`;
+    document.getElementById('profileGross').textContent = formatCurrency(bookingRevenue(r));
+    const profileAdjustments=-(Number(r.turoFee)||0)-(Number(r.discount)||0)
+      +(Number(r.lateFee)||0)+(Number(r.fuelFee)||0)+(Number(r.cleaningFee)||0)
+      +(Number(r.mileageFee)||0)+(Number(r.otherFee)||0);
+    document.getElementById('profileFees').textContent = (profileAdjustments<0?'-':profileAdjustments>0?'+':'')+formatCurrency(Math.abs(profileAdjustments));
+    document.getElementById('profileNet').textContent = formatCurrency(rentalNet(r));
 
     document.getElementById('editScheduledReturnDate').value = toDateInputValue_(r.scheduledReturnDate);
     document.getElementById('editScheduledReturnTime').value = r.scheduledReturnTime || '';
@@ -6855,7 +7044,7 @@ table thead th.sortable-th.sort-desc{
       (parseFloat(document.getElementById('editCleaningFee').value)||0) +
       (parseFloat(document.getElementById('editOtherFee').value)||0);
     const discount = parseFloat(document.getElementById('editDiscount').value)||0;
-    const net = r.gross - r.turoFee + additional - discount;
+    const net = bookingRevenue(r) - (Number(r.turoFee)||0) + additional + (Number(r.mileageFee)||0) - discount;
     const editedLateMins = minutesLate(
       r.scheduledReturnDate,
       r.scheduledReturnTime,
@@ -6889,7 +7078,7 @@ table thead th.sortable-th.sort-desc{
     r.otherFee = parseFloat(document.getElementById('editOtherFee').value)||0;
     r.discount = parseFloat(document.getElementById('editDiscount').value)||0;
     r.notes = document.getElementById('editNotes').value;
-    r.net = r.gross - r.turoFee + r.lateFee + r.fuelFee + r.cleaningFee + r.otherFee - r.discount;
+    r.net = bookingRevenue(r) - (Number(r.turoFee)||0) + r.lateFee + r.fuelFee + r.cleaningFee + (Number(r.mileageFee)||0) + r.otherFee - r.discount;
 
     alert('Cambios guardados en la demo. En la versión con Apps Script también crearíamos un registro de auditoría con fecha, usuario y valores modificados.');
     openReservationProfile(currentRental);
@@ -6902,10 +7091,10 @@ table thead th.sortable-th.sort-desc{
     if(!submitBtn) return;
     try{
     const r = rentals[currentRental];
-    const milesIn = parseFloat(document.getElementById('milesIn').value);
+    const milesIn = readAppNumber('milesIn');
     const needsMaintenance = document.getElementById('needsMaintenance').value === 'Sí';
 
-    if(isNaN(milesIn) || milesIn < r.milesOut){
+    if(!milesIn || milesIn < Number(r.milesOut||0)){
       alert('Las millas de entrada deben ser iguales o mayores que las millas de salida.');
       return;
     }
@@ -6934,7 +7123,7 @@ table thead th.sortable-th.sort-desc{
     if(currentVehicleId===r.vehicleId) renderVehicle360();
 
     alert(
-      `${currentRental} cerrado correctamente.\n\n${r.vehicle}\nMillas nuevas: ${milesIn.toLocaleString()}\nGasolina: ${selectedFuel}\nEstado final: ${needsMaintenance ? 'Servicio / No rentable' : 'Disponible'}\nNet: $${(result.net||0).toFixed(2)}`
+      `${currentRental} cerrado correctamente.\n\n${r.vehicle}\nMillas nuevas: ${milesIn.toLocaleString()}\nGasolina: ${selectedFuel}\nEstado final: ${needsMaintenance ? 'Servicio / No rentable' : 'Disponible'}\nNet: ${formatCurrency(result.net||0)}`
     );
     closeDrawer('checkinDrawer');
     } finally { unlockSubmitButton(submitBtn); }
@@ -7131,6 +7320,57 @@ table thead th.sortable-th.sort-desc{
 
   document.addEventListener('DOMContentLoaded',()=>{
     setTimeout(enableAllSortableTables,120);
+  });
+
+
+  function setupPrettyNumberInput(id,kind){
+    const el=document.getElementById(id);
+    if(!el || el.dataset.prettyNumber==='1') return;
+    el.dataset.prettyNumber='1';
+    el.type='text';
+    el.inputMode=kind==='money'?'decimal':'numeric';
+
+    const plain=()=>{
+      const raw=String(el.value||'').replace(/[$,\s]/g,'');
+      if(raw!=='') el.value=raw;
+    };
+    const pretty=()=>{
+      const raw=String(el.value||'').replace(/[$,\s]/g,'');
+      if(raw===''){ el.value=''; return; }
+      const n=Number(raw);
+      if(!Number.isFinite(n)){ el.value=''; return; }
+      el.value=kind==='money' ? formatCurrency(n) : formatInteger(n);
+    };
+
+    el.addEventListener('focus',plain);
+    el.addEventListener('blur',pretty);
+    pretty();
+  }
+
+  function setupRentalInputFormatting(){
+    [
+      'nrTuroFee','nrGross','nrDeliveryFee','nrDiscount','nrExtraMileRate','nrDeductible',
+      'nrDepositRequired','nrDepositCollected','lateFee','fuelFee','cleaningFee',
+      'mileageFee','otherFee','discount'
+    ].forEach(id=>setupPrettyNumberInput(id,'money'));
+
+    ['nrMilesOut','nrAllowedMilesPerDay','milesOut','milesIn'].forEach(id=>setupPrettyNumberInput(id,'integer'));
+  }
+
+  function refreshPrettyNumberInput(id){
+    const el=document.getElementById(id);
+    if(!el || el.dataset.prettyNumber!=='1' || document.activeElement===el) return;
+    const raw=String(el.value||'').replace(/[$,\s]/g,'');
+    if(raw==='') return;
+    const n=Number(raw);
+    if(!Number.isFinite(n)) return;
+    const isMoney=['nrTuroFee','nrGross','nrDeliveryFee','nrDiscount','nrExtraMileRate','nrDeductible',
+      'nrDepositRequired','nrDepositCollected','lateFee','fuelFee','cleaningFee','mileageFee','otherFee','discount'].includes(id);
+    el.value=isMoney?formatCurrency(n):formatInteger(n);
+  }
+
+  document.addEventListener('DOMContentLoaded',()=>{
+    setTimeout(setupRentalInputFormatting,80);
   });
 
 </script>
@@ -7774,6 +8014,123 @@ table thead th.sortable-th.sort-desc{
   .rental-fee-tags span{
     font-size:8px;
   }
+}
+</style>
+
+
+<style id="v25-mileage-delivery">
+/* V25 — booking mileage policy + delivery fee */
+.mileage-policy-booking{
+  margin-top:18px;
+  padding-top:16px;
+  border-top:1px solid #d3dae5;
+}
+.mileage-policy-booking .section-title{margin-top:0}
+.mileage-policy-preview{
+  margin-top:12px;
+  padding:11px 12px;
+  border-radius:8px;
+  background:#e8edf7;
+  border-left:3px solid #3454e8;
+  color:#5d687f;
+  font-size:11px;
+  line-height:1.45;
+}
+.mileage-policy-preview strong{color:#26334e}
+
+.booking-preview-grid{
+  grid-template-columns:repeat(5,minmax(0,1fr));
+}
+.mileage-checkin-card{
+  margin-top:16px;
+  padding:15px;
+  border:1px solid #cbd5e3;
+  border-radius:11px;
+  background:linear-gradient(145deg,#e8edf6,#f1f4f9);
+}
+.mileage-checkin-title{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:13px;
+}
+.mileage-checkin-title strong{
+  display:block;
+  margin-top:4px;
+  font-size:14px;
+  color:#263149;
+}
+.mileage-checkin-grid{
+  display:grid;
+  grid-template-columns:repeat(6,minmax(0,1fr));
+  gap:7px;
+}
+.mileage-checkin-grid > div{
+  background:#f8fafd;
+  border:1px solid #d4dce8;
+  border-radius:8px;
+  padding:10px;
+}
+.mileage-checkin-grid small{
+  display:block;
+  font-size:8px;
+  font-weight:850;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+  color:#7b8497;
+  margin-bottom:4px;
+}
+.mileage-checkin-grid strong{
+  font-size:14px;
+  color:#202a40;
+}
+.mileage-calculation-line{
+  margin-top:10px;
+  padding-top:10px;
+  border-top:1px solid #d4dce7;
+  color:#59657b;
+  font-size:11px;
+}
+.mileage-result-badge{
+  flex:0 0 auto;
+  padding:6px 8px;
+  border-radius:6px;
+  background:#e1e6ef;
+  color:#596477;
+  font-size:9px;
+  font-weight:900;
+  text-transform:uppercase;
+  letter-spacing:.05em;
+}
+.mileage-result-badge.good{
+  background:#dff3e8;
+  color:#17633e;
+}
+.mileage-result-badge.over{
+  background:#ffe7e9;
+  color:#a03242;
+}
+.mileage-result-badge.unlimited{
+  background:#e2e8ff;
+  color:#364eaf;
+}
+#mileageFee[readonly]{
+  background:#e8edf4;
+  color:#36415a;
+  font-weight:800;
+}
+@media(max-width:1050px){
+  .booking-preview-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .mileage-checkin-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(max-width:620px){
+  .booking-preview-grid{grid-template-columns:1fr 1fr}
+  .mileage-checkin-grid{grid-template-columns:1fr 1fr}
+}
+@media(max-width:390px){
+  .booking-preview-grid,
+  .mileage-checkin-grid{grid-template-columns:1fr}
 }
 </style>
 
