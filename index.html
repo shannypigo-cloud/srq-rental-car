@@ -2409,6 +2409,92 @@ table thead th.sortable-th.sort-desc{
   <div style="font-weight:800;color:#5a6070;font-size:14px">Cargando datos de la flota...</div>
 </div>
 <style>@keyframes loadingSpin{to{transform:rotate(360deg)}}</style>
+
+<!-- AUTH SCREENS -->
+<style>
+  .auth-screen{
+    position:fixed;inset:0;z-index:998;background:var(--swiss-blue);
+    display:none;align-items:center;justify-content:center;padding:20px;
+  }
+  .auth-screen.open{display:flex}
+  .auth-card{
+    background:#fff;width:100%;max-width:400px;padding:34px 30px;
+  }
+  .auth-card .auth-logo{width:64px;height:64px;object-fit:contain;margin-bottom:18px}
+  .auth-card h2{font-size:26px;letter-spacing:-.02em;margin:0 0 4px}
+  .auth-card p.auth-sub{color:var(--muted);font-size:13px;margin:0 0 22px}
+  .auth-card label{
+    display:block;font-size:11px;font-weight:850;text-transform:uppercase;
+    letter-spacing:.06em;color:#5a6070;margin:14px 0 5px
+  }
+  .auth-card input{
+    width:100%;padding:11px 12px;border:1px solid var(--line);
+    font-size:14px;font-family:inherit;box-sizing:border-box
+  }
+  .auth-card input:focus{outline:2px solid var(--swiss-blue);outline-offset:-2px}
+  .auth-card .btn{width:100%;margin-top:20px;padding:12px}
+  .auth-error{
+    background:#fdeaea;color:#a3252c;padding:10px 12px;font-size:13px;
+    margin-top:14px;display:none
+  }
+  .auth-error.show{display:block}
+  .auth-note{font-size:12px;color:var(--muted);margin-top:16px;line-height:1.5}
+</style>
+
+<div class="auth-screen" id="loginScreen">
+  <div class="auth-card">
+    <img class="auth-logo" src="logo.jpg" alt="SRQ Rental Car">
+    <h2>Iniciar sesión</h2>
+    <p class="auth-sub">SRQ Rental Car · Fleet Operations</p>
+    <form id="loginForm" onsubmit="doLogin(event)">
+      <label>Email</label>
+      <input id="loginEmail" type="email" autocomplete="username" required>
+      <label>Contraseña</label>
+      <input id="loginPassword" type="password" autocomplete="current-password" required>
+      <div class="auth-error" id="loginError"></div>
+      <button type="submit" class="btn primary">Entrar</button>
+    </form>
+  </div>
+</div>
+
+<div class="auth-screen" id="bootstrapScreen">
+  <div class="auth-card">
+    <img class="auth-logo" src="logo.jpg" alt="SRQ Rental Car">
+    <h2>Configuración inicial</h2>
+    <p class="auth-sub">No hay usuarios todavía. Crea la cuenta de administrador.</p>
+    <form id="bootstrapForm" onsubmit="doBootstrap(event)">
+      <label>Nombre</label>
+      <input id="bsName" required>
+      <label>Email</label>
+      <input id="bsEmail" type="email" required>
+      <label>Contraseña (mínimo 8 caracteres)</label>
+      <input id="bsPassword" type="password" minlength="8" required>
+      <label>Repetir contraseña</label>
+      <input id="bsPassword2" type="password" minlength="8" required>
+      <div class="auth-error" id="bsError"></div>
+      <button type="submit" class="btn primary">Crear administrador</button>
+    </form>
+  </div>
+</div>
+
+<div class="auth-screen" id="resetScreen">
+  <div class="auth-card">
+    <img class="auth-logo" src="logo.jpg" alt="SRQ Rental Car">
+    <h2>Crea tu contraseña</h2>
+    <p class="auth-sub">Por seguridad, cambia la contraseña temporal.</p>
+    <form id="resetForm" onsubmit="doForcedReset(event)">
+      <label>Contraseña temporal actual</label>
+      <input id="rsCurrent" type="password" required>
+      <label>Nueva contraseña (mínimo 8 caracteres)</label>
+      <input id="rsNew" type="password" minlength="8" required>
+      <label>Repetir nueva contraseña</label>
+      <input id="rsNew2" type="password" minlength="8" required>
+      <div class="auth-error" id="rsError"></div>
+      <button type="submit" class="btn primary">Guardar contraseña</button>
+    </form>
+  </div>
+</div>
+
 <div class="app">
   <aside>
     <div class="brand">
@@ -2422,6 +2508,7 @@ table thead th.sortable-th.sort-desc{
       <button data-view="vehicles">Vehículos</button>
       <button data-view="maintenance">Mantenimiento</button>
     </nav>
+    <div id="sessionBar" style="padding:14px 0;border-top:1px solid rgba(255,255,255,.12);margin-top:12px"></div>
     <div class="aside-foot">SRQ Rental Car · Operations System<br><span style="color:#68709c">Google Sheets + Apps Script</span></div>
   </aside>
 
@@ -3434,6 +3521,70 @@ table thead th.sortable-th.sort-desc{
   </div>
 </div>
 
+<!-- USERS DRAWER (admin only) -->
+<div class="drawer-backdrop" id="usersDrawer" onclick="closeBackdrop(event,'usersDrawer')">
+  <div class="drawer">
+    <div class="drawer-head">
+      <div>
+        <div class="eyebrow">Administración</div>
+        <h2 style="font-size:28px;margin:5px 0 0">Usuarios</h2>
+        <div class="helper">Al crear un usuario se envía una contraseña temporal por correo.</div>
+      </div>
+      <button class="close" onclick="closeDrawer('usersDrawer')">✕</button>
+    </div>
+
+    <form id="newUserForm" onsubmit="saveNewUser(event)">
+      <div class="form-section">
+        <div class="form-section-head"><div><h3>Nuevo usuario</h3></div></div>
+        <div class="form-grid">
+          <div class="field"><label>Nombre *</label><input id="nuName" required></div>
+          <div class="field"><label>Email *</label><input id="nuEmail" type="email" required></div>
+          <div class="field full">
+            <label style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:13px">
+              <input id="nuIsAdmin" type="checkbox" style="width:auto;margin:0">
+              Administrador (puede crear y gestionar usuarios)
+            </label>
+          </div>
+        </div>
+        <div class="drawer-actions" style="border:0;padding-top:0">
+          <button type="submit" class="btn primary">Crear usuario</button>
+        </div>
+      </div>
+    </form>
+
+    <div class="form-section">
+      <div class="form-section-head"><div><h3>Usuarios existentes</h3></div></div>
+      <div id="usersList"></div>
+    </div>
+  </div>
+</div>
+
+<!-- CHANGE PASSWORD DRAWER -->
+<div class="drawer-backdrop" id="changePasswordDrawer" onclick="closeBackdrop(event,'changePasswordDrawer')">
+  <div class="drawer">
+    <div class="drawer-head">
+      <div>
+        <div class="eyebrow">Mi cuenta</div>
+        <h2 style="font-size:28px;margin:5px 0 0">Cambiar contraseña</h2>
+      </div>
+      <button class="close" onclick="closeDrawer('changePasswordDrawer')">✕</button>
+    </div>
+    <form id="changePasswordForm" onsubmit="saveNewPassword(event)">
+      <div class="form-section">
+        <div class="form-grid">
+          <div class="field full"><label>Contraseña actual</label><input id="cpCurrent" type="password" required></div>
+          <div class="field full"><label>Nueva contraseña (mínimo 8 caracteres)</label><input id="cpNew" type="password" minlength="8" required></div>
+          <div class="field full"><label>Repetir nueva contraseña</label><input id="cpNew2" type="password" minlength="8" required></div>
+        </div>
+      </div>
+      <div class="drawer-actions">
+        <button type="button" class="btn secondary" onclick="closeDrawer('changePasswordDrawer')">Cancelar</button>
+        <button type="submit" class="btn primary">Guardar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <!-- CUSTOMER EDIT DRAWER -->
 <div class="drawer-backdrop" id="customerEditDrawer" onclick="closeBackdrop(event,'customerEditDrawer')">
   <div class="drawer">
@@ -4070,11 +4221,146 @@ table thead th.sortable-th.sort-desc{
     }
   }
 
-  document.addEventListener('DOMContentLoaded', async ()=>{
+  // ============================================================
+  // AUTH FLOW
+  // On load: if there's a stored session, go straight into the app. If not,
+  // ask the backend whether any users exist — none means first-run setup,
+  // otherwise show the login form.
+  // ============================================================
+  function hideLoader(){
+    const overlay = document.getElementById('loadingOverlay');
+    if(overlay) overlay.style.display = 'none';
+  }
+  function hideAllAuthScreens(){
+    document.querySelectorAll('.auth-screen').forEach(s=>s.classList.remove('open'));
+  }
+  function showAuthScreen(id){
+    hideLoader();
+    hideAllAuthScreens();
+    document.getElementById(id).classList.add('open');
+  }
+  function showLoginScreen(){ showAuthScreen('loginScreen'); }
+
+  function showAuthError(elId, message){
+    const el = document.getElementById(elId);
+    el.textContent = message;
+    el.classList.add('show');
+  }
+  function clearAuthError(elId){
+    document.getElementById(elId).classList.remove('show');
+  }
+
+  // Loads fleet data and reveals the app itself.
+  async function enterApp(){
+    hideAllAuthScreens();
+    const overlay = document.getElementById('loadingOverlay');
+    if(overlay) overlay.style.display = 'flex';
     await loadAppData();
     renderAll();
-    const overlay = document.getElementById('loadingOverlay');
-    if(overlay) overlay.remove();
+    renderSessionBar();
+    hideLoader();
+  }
+
+  async function doLogin(e){
+    e.preventDefault();
+    clearAuthError('loginError');
+    const btn = lockSubmitButton(e.target);
+    if(!btn) return;
+    try{
+      const result = await apiPostRaw('login', {
+        email: document.getElementById('loginEmail').value.trim(),
+        password: document.getElementById('loginPassword').value
+      });
+      if(result.error){ showAuthError('loginError', result.error); return; }
+
+      saveSession({ token: result.token, user: result.user });
+      document.getElementById('loginForm').reset();
+
+      if(result.mustReset){ showAuthScreen('resetScreen'); return; }
+      await enterApp();
+    }catch(err){
+      showAuthError('loginError', 'No se pudo conectar. Revisa tu conexión.');
+    }finally{ unlockSubmitButton(btn); }
+  }
+
+  async function doBootstrap(e){
+    e.preventDefault();
+    clearAuthError('bsError');
+    const pw = document.getElementById('bsPassword').value;
+    if(pw !== document.getElementById('bsPassword2').value){
+      showAuthError('bsError', 'Las contraseñas no coinciden.'); return;
+    }
+    const btn = lockSubmitButton(e.target);
+    if(!btn) return;
+    try{
+      const result = await apiPostRaw('bootstrapAdmin', {
+        name: document.getElementById('bsName').value.trim(),
+        email: document.getElementById('bsEmail').value.trim(),
+        password: pw
+      });
+      if(result.error){ showAuthError('bsError', result.error); return; }
+      alert('Administrador creado. Ahora inicia sesión.');
+      showLoginScreen();
+    }catch(err){
+      showAuthError('bsError', 'No se pudo conectar. Revisa tu conexión.');
+    }finally{ unlockSubmitButton(btn); }
+  }
+
+  async function doForcedReset(e){
+    e.preventDefault();
+    clearAuthError('rsError');
+    const nw = document.getElementById('rsNew').value;
+    if(nw !== document.getElementById('rsNew2').value){
+      showAuthError('rsError', 'Las contraseñas no coinciden.'); return;
+    }
+    const btn = lockSubmitButton(e.target);
+    if(!btn) return;
+    try{
+      const result = await apiPostRaw('changePassword', {
+        token: session ? session.token : null,
+        currentPassword: document.getElementById('rsCurrent').value,
+        newPassword: nw
+      });
+      if(result.error){ showAuthError('rsError', result.error); return; }
+      document.getElementById('resetForm').reset();
+      await enterApp();
+    }catch(err){
+      showAuthError('rsError', 'No se pudo conectar. Revisa tu conexión.');
+    }finally{ unlockSubmitButton(btn); }
+  }
+
+  async function doLogout(){
+    if(!confirm('¿Cerrar sesión?')) return;
+    try{ await apiPostRaw('logout', { token: session ? session.token : null }); }catch(e){}
+    clearSession();
+    location.reload();
+  }
+
+  // Shows who's logged in, plus logout and (for admins) the users panel.
+  function renderSessionBar(){
+    const el = document.getElementById('sessionBar');
+    if(!el || !session) return;
+    el.innerHTML = `
+      <div style="font-size:12px;font-weight:800">${esc(session.user.name)}</div>
+      <div style="font-size:11px;color:#8a90a3;margin-bottom:8px">${esc(session.user.email)}</div>
+      ${session.user.isAdmin ? '<button class="btn secondary" style="width:100%;margin-bottom:6px" onclick="openUsersDrawer()">Usuarios</button>' : ''}
+      <button class="btn secondary" style="width:100%;margin-bottom:6px" onclick="openChangePasswordDrawer()">Cambiar contraseña</button>
+      <button class="btn secondary" style="width:100%" onclick="doLogout()">Cerrar sesión</button>
+    `;
+  }
+
+  document.addEventListener('DOMContentLoaded', async ()=>{
+    if(loadSession()){
+      await enterApp();
+      return;
+    }
+    try{
+      const result = await apiPostRaw('needsBootstrap', {});
+      showAuthScreen(result.needsBootstrap ? 'bootstrapScreen' : 'loginScreen');
+    }catch(err){
+      // Can't reach the backend — show login anyway so the page isn't stuck.
+      showLoginScreen();
+    }
   });
 
 
@@ -4556,9 +4842,9 @@ table thead th.sortable-th.sort-desc{
     (r.audit || []).forEach(item=>{
       list.insertAdjacentHTML('beforeend',`
         <div class="audit-item">
-          <strong>${esc(item.when)}</strong>
-          <small>${esc(item.who)}</small>
-          <div class="audit-change">${esc(item.change)}</div>
+          <strong>${esc(item.when || item.date)}</strong>
+          <small>${esc(item.who || 'Sistema')}</small>
+          <div class="audit-change">${esc(item.change || item.text)}</div>
         </div>
       `);
     });
@@ -5278,7 +5564,7 @@ table thead th.sortable-th.sort-desc{
     const list = vehicleRecords[currentVehicleId].audit || [];
     wrap.innerHTML = list.length ? list.map(i=>`
       <div class="audit-vehicle-item">
-        <small>${esc(i.date)}</small>
+        <small>${esc(i.date)}${i.who ? ' · ' + esc(i.who) : ''}</small>
         <div>${esc(i.text)}</div>
       </div>
     `).join('') : '<div class="history-empty">No hay eventos históricos registrados.</div>';
@@ -5348,6 +5634,48 @@ table thead th.sortable-th.sort-desc{
   // /exec URL from being a fully public read/write API for anyone who finds it.
   const API_TOKEN = '1fnhZUBbthNojGaYUMIVUaoFznkKOm0T';
 
+  // ============================================================
+  // SESSION
+  // The session token comes from the backend at login and is sent with
+  // every request. It's kept in sessionStorage, so it dies when the tab
+  // closes and isn't shared with other tabs' logins.
+  // ============================================================
+  let session = null;
+
+  function saveSession(s){
+    session = s;
+    try{ sessionStorage.setItem('srq_session', JSON.stringify(s)); }catch(e){}
+  }
+  function loadSession(){
+    try{
+      const raw = sessionStorage.getItem('srq_session');
+      session = raw ? JSON.parse(raw) : null;
+    }catch(e){ session = null; }
+    return session;
+  }
+  function clearSession(){
+    session = null;
+    try{ sessionStorage.removeItem('srq_session'); }catch(e){}
+  }
+
+  // Posts without requiring a session — used by login/bootstrap themselves.
+  async function apiPostRaw(action, payload){
+    const res = await fetch(WEBAPP_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action, payload, token: API_TOKEN })
+    });
+    return res.json();
+  }
+
+  // When the backend says the session is gone, drop the user back to the
+  // login screen rather than leaving them on a dead page.
+  function handleExpiredSession(){
+    clearSession();
+    alert('Tu sesión expiró. Vuelve a iniciar sesión.');
+    showLoginScreen();
+  }
+
   // Escapes free-text values (names, notes, vendor, etc.) before they're
   // interpolated into innerHTML template strings, so a customer/vehicle/
   // rental note containing HTML/JS can't execute in the browser.
@@ -5394,8 +5722,13 @@ table thead th.sortable-th.sort-desc{
 
   async function loadAppData(){
     try{
-      const res = await fetch(WEBAPP_URL + '?action=data&token=' + encodeURIComponent(API_TOKEN));
+      const res = await fetch(WEBAPP_URL + '?action=data&token=' + encodeURIComponent(API_TOKEN)
+        + '&session=' + encodeURIComponent(session ? session.token : ''));
       const data = await res.json();
+      if(data.error === 'SESSION_EXPIRED'){
+        handleExpiredSession();
+        return;
+      }
       if(data.error){
         console.error('SRQ Rental Car API error:', data.error);
         alert('La hoja respondió con un error: ' + data.error + '\n\nSe muestran datos de ejemplo mientras tanto.');
@@ -5472,12 +5805,17 @@ table thead th.sortable-th.sort-desc{
   }
 
   async function apiPost(action, payload){
+    const body = Object.assign({}, payload, { token: session ? session.token : null });
     const res = await fetch(WEBAPP_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action, payload, token: API_TOKEN })
+      body: JSON.stringify({ action, payload: body, token: API_TOKEN })
     });
     const result = await res.json();
+    if(result.error === 'SESSION_EXPIRED'){
+      handleExpiredSession();
+      throw new Error('SESSION_EXPIRED');
+    }
     if(result.error){
       alert('Error guardando en la hoja: ' + result.error);
       throw new Error(result.error);
@@ -5766,7 +6104,7 @@ table thead th.sortable-th.sort-desc{
         : '';
     }
     document.getElementById('customerAudit').innerHTML=(c.audit||[]).map(a=>`
-      <div class="audit-vehicle-item"><small>${esc(a.date)}</small><div>${esc(a.text)}</div></div>`).join('')||'<div class="history-empty">No audit history.</div>';
+      <div class="audit-vehicle-item"><small>${esc(a.date)}${a.who ? ' · ' + esc(a.who) : ''}</small><div>${esc(a.text)}</div></div>`).join('')||'<div class="history-empty">No audit history.</div>';
   }
 
   function nextCustomerId(){
@@ -5832,6 +6170,114 @@ table thead th.sortable-th.sort-desc{
       showView('customers');
     }
     } finally { unlockSubmitButton(submitBtn); }
+  }
+
+  // ============================================================
+  // USER MANAGEMENT (admin)
+  // ============================================================
+  async function openUsersDrawer(){
+    document.getElementById('usersDrawer').classList.add('open');
+    document.body.style.overflow='hidden';
+    await renderUsersList();
+  }
+
+  async function renderUsersList(){
+    const wrap = document.getElementById('usersList');
+    wrap.innerHTML = '<div class="history-empty">Cargando...</div>';
+    let result;
+    try{ result = await apiPost('listUsers', {}); }
+    catch(err){ wrap.innerHTML = '<div class="history-empty">No se pudieron cargar los usuarios.</div>'; return; }
+
+    if(!result.users.length){ wrap.innerHTML = '<div class="history-empty">No hay usuarios.</div>'; return; }
+
+    wrap.innerHTML = result.users.map(u=>`
+      <div class="claim-card">
+        <div>
+          <strong>${esc(u.name)}${u.isAdmin ? ' · Admin' : ''}</strong>
+          <small>${esc(u.email)}</small>
+          <div style="margin-top:6px;font-size:12px;color:var(--muted)">
+            Último acceso: ${u.lastLogin ? esc(u.lastLogin) : 'nunca'}
+          </div>
+          <div style="margin-top:9px;display:flex;gap:8px;flex-wrap:wrap">
+            <button type="button" class="btn secondary" onclick="resetUserPassword('${u.id}')">Resetear contraseña</button>
+            ${u.id === session.user.id ? '' :
+              `<button type="button" class="btn secondary" onclick="toggleUserStatus('${u.id}','${u.status === 'active' ? 'disabled' : 'active'}')">
+                 ${u.status === 'active' ? 'Desactivar' : 'Reactivar'}
+               </button>`}
+          </div>
+        </div>
+        <span class="claim-status ${u.status === 'active' ? 'paid' : 'pending'}">${u.status === 'active' ? 'Activo' : 'Inactivo'}</span>
+      </div>`).join('');
+  }
+
+  async function saveNewUser(e){
+    e.preventDefault();
+    const btn = lockSubmitButton(e.target);
+    if(!btn) return;
+    try{
+      const result = await apiPost('addUser', {
+        name: document.getElementById('nuName').value.trim(),
+        email: document.getElementById('nuEmail').value.trim(),
+        isAdmin: document.getElementById('nuIsAdmin').checked
+      });
+      // If the email couldn't be sent, the backend hands back the temp
+      // password so the admin can deliver it another way.
+      if(result.emailed){
+        alert('Usuario creado. Se envió la contraseña temporal por correo.');
+      }else{
+        alert('Usuario creado, pero no se pudo enviar el correo.\n\nContraseña temporal: ' + result.tempPassword + '\n\nCompártela de forma segura.');
+      }
+      document.getElementById('newUserForm').reset();
+      await renderUsersList();
+    }catch(err){ /* apiPost already alerted */ }
+    finally{ unlockSubmitButton(btn); }
+  }
+
+  async function resetUserPassword(id){
+    if(!confirm('¿Resetear la contraseña de este usuario?')) return;
+    try{
+      const result = await apiPost('resetUserPassword', { id });
+      if(result.emailed){
+        alert('Contraseña restablecida y enviada por correo.');
+      }else{
+        alert('Contraseña restablecida, pero no se pudo enviar el correo.\n\nContraseña temporal: ' + result.tempPassword);
+      }
+      await renderUsersList();
+    }catch(err){ /* handled */ }
+  }
+
+  async function toggleUserStatus(id, status){
+    try{
+      await apiPost('updateUserStatus', { id, status });
+      await renderUsersList();
+    }catch(err){ /* handled */ }
+  }
+
+  function openChangePasswordDrawer(){
+    document.getElementById('changePasswordForm').reset();
+    document.getElementById('changePasswordDrawer').classList.add('open');
+    document.body.style.overflow='hidden';
+  }
+
+  async function saveNewPassword(e){
+    e.preventDefault();
+    const nw = document.getElementById('cpNew').value;
+    if(nw !== document.getElementById('cpNew2').value){
+      alert('Las contraseñas no coinciden.'); return;
+    }
+    const btn = lockSubmitButton(e.target);
+    if(!btn) return;
+    try{
+      const result = await apiPostRaw('changePassword', {
+        token: session ? session.token : null,
+        currentPassword: document.getElementById('cpCurrent').value,
+        newPassword: nw
+      });
+      if(result.error){ alert(result.error); return; }
+      alert('Contraseña actualizada.');
+      closeDrawer('changePasswordDrawer');
+    }catch(err){ alert('No se pudo conectar.'); }
+    finally{ unlockSubmitButton(btn); }
   }
 
   function openCustomerEditDrawer(){
