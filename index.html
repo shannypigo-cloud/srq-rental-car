@@ -142,6 +142,7 @@
     .progress{height:8px;background:#e9ecef;border-radius:999px;overflow:hidden;margin-top:10px}
     .progress span{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:999px}
     .mobile-actions{display:none}
+    #mobileAccountBtn,#mobileAccountMenu{display:none}
     .note{
       background:#f6f8fa;border:1px dashed #d7dce1;border-radius:12px;padding:13px;font-size:13px;color:#59616a
     }
@@ -592,10 +593,25 @@
         position:fixed;left:0;right:0;bottom:0;top:auto;height:auto;z-index:20;
         padding:8px 12px;background:linear-gradient(90deg,#24263e,#1d1f35)
       }
-      .brand,.aside-foot{display:none}
-      nav{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px}
+      .brand,.aside-foot,#sessionBar{display:none}
+      #mobileAccountBtn{
+        display:flex;align-items:center;justify-content:center;
+        position:fixed;top:14px;right:14px;z-index:22;
+        width:38px;height:38px;border-radius:50%;border:0;
+        background:var(--swiss-blue,#304bff);color:#fff;
+        font-weight:800;font-size:14px;box-shadow:0 8px 20px rgba(0,0,0,.22);
+      }
+      #mobileAccountMenu{
+        display:none;position:fixed;top:58px;right:14px;z-index:22;
+        background:#fff;border:1px solid var(--line,#d2d9e6);border-radius:10px;
+        padding:12px;width:220px;box-shadow:0 16px 34px rgba(0,0,0,.18);
+      }
+      #mobileAccountMenu.open{display:flex;flex-direction:column;gap:8px}
+      #mobileAccountInfo{font-size:12px;color:var(--muted,#687086);padding-bottom:4px;border-bottom:1px solid var(--line,#d2d9e6);margin-bottom:2px;word-break:break-word}
+      #mobileAccountMenu .btn{width:100%;text-align:center}
+      nav{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px}
       nav button{
-        text-align:center;padding:11px 8px;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis
+        text-align:center;padding:11px 4px;font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis
       }
       main{
         padding:24px 24px 92px;
@@ -1699,19 +1715,19 @@ input:focus,select:focus,textarea:focus{
     border-top:1px solid var(--swiss-line);
     background:#fff;
   }
-  .brand,.aside-foot{
+  .brand,.aside-foot,#sessionBar{
     display:none;
   }
   nav{
-    grid-template-columns:repeat(5,minmax(0,1fr));
+    grid-template-columns:repeat(6,minmax(0,1fr));
     gap:0;
   }
   nav button{
     border-left:0;
     border-top:2px solid transparent;
     text-align:center;
-    padding:12px 4px;
-    font-size:10px;
+    padding:12px 2px;
+    font-size:9px;
   }
   nav button.active{
     border-left:0;
@@ -3217,6 +3233,19 @@ table thead th.sortable-th.sort-desc{
   <button class="btn primary" id="contextActionBtn" onclick="runContextAction()">+ Nueva renta</button>
 </div>
 
+<!-- Cuenta en móvil: el bloque de sesión del sidebar (#sessionBar) se
+     oculta en pantallas chicas porque no cabe en la barra inferior; esto
+     lo reemplaza con un botón compacto + menú. -->
+<button id="mobileAccountBtn" onclick="toggleMobileAccountMenu()" aria-label="Cuenta">
+  <span id="mobileAccountInitial">?</span>
+</button>
+<div id="mobileAccountMenu">
+  <div id="mobileAccountInfo"></div>
+  <button type="button" class="btn secondary" id="mobileUsersBtn" onclick="closeMobileAccountMenu();openUsersDrawer()">Usuarios</button>
+  <button type="button" class="btn secondary" onclick="closeMobileAccountMenu();openChangePasswordDrawer()">Cambiar contraseña</button>
+  <button type="button" class="btn secondary" onclick="closeMobileAccountMenu();doLogout()">Cerrar sesión</button>
+</div>
+
 <!-- NEW RENTAL DRAWER -->
 <div class="drawer-backdrop" id="newRentalDrawer" onclick="closeBackdrop(event,'newRentalDrawer')">
   <div class="drawer">
@@ -4601,6 +4630,27 @@ table thead th.sortable-th.sort-desc{
       <button class="btn secondary" style="width:100%;margin-bottom:6px" onclick="openChangePasswordDrawer()">Cambiar contraseña</button>
       <button class="btn secondary" style="width:100%" onclick="doLogout()">Cerrar sesión</button>
     `;
+    renderMobileAccountMenu();
+  }
+
+  // Contraparte de renderSessionBar para la barra inferior de móvil, donde
+  // el bloque de sesión completo no cabe — un botón redondo con la inicial
+  // del usuario que abre este mismo menú en miniatura.
+  function renderMobileAccountMenu(){
+    if(!session) return;
+    const initialEl = document.getElementById('mobileAccountInitial');
+    if(initialEl) initialEl.textContent = (session.user.name||session.user.email||'?').trim().charAt(0).toUpperCase();
+    const infoEl = document.getElementById('mobileAccountInfo');
+    if(infoEl) infoEl.innerHTML = `<strong>${esc(session.user.name)}</strong><br>${esc(session.user.email)}`;
+    const usersBtn = document.getElementById('mobileUsersBtn');
+    if(usersBtn) usersBtn.style.display = session.user.isAdmin ? '' : 'none';
+  }
+
+  function toggleMobileAccountMenu(){
+    document.getElementById('mobileAccountMenu')?.classList.toggle('open');
+  }
+  function closeMobileAccountMenu(){
+    document.getElementById('mobileAccountMenu')?.classList.remove('open');
   }
 
   document.addEventListener('DOMContentLoaded', async ()=>{
@@ -7393,17 +7443,26 @@ table thead th.sortable-th.sort-desc{
   }
 
   // Re-run reveal for dynamically rendered content.
+  //
+  // Bug real que arregla esto: initSwissReveal() marca TODOS los .metric/
+  // .card/etc. de TODAS las vistas desde la carga inicial de la página,
+  // aunque estén ocultos (display:none) dentro de una vista inactiva. Ese
+  // IntersectionObserver nunca los "ve" mientras están ocultos, así que
+  // quedan con opacity:0 hasta que el usuario haga scroll lo suficiente
+  // como para que efectivamente entren en el viewport. En una vista larga
+  // (como Reportes en móvil) eso deja tramos enteros invisibles al
+  // cambiar de pestaña. Antes, este bloque solo revelaba elementos que
+  // TODAVÍA no tuvieran la clase 'reveal-swiss' — pero como el escaneo
+  // inicial ya se la puso a prácticamente todo, esta protección nunca
+  // se activaba fuera del Dashboard. Ahora revela sin esa condición.
   const _originalShowView = showView;
   showView = function(id){
     _originalShowView(id);
     setTimeout(()=>{
       document.querySelectorAll(
-        '#'+id+' .metric, #'+id+' .card, #'+id+' .vehicle-financial, #'+id+' .customer-hero, #'+id+' .vehicle360-title'
-      ).forEach((el,i)=>{
-        if(!el.classList.contains('reveal-swiss')){
-          el.classList.add('reveal-swiss');
-          requestAnimationFrame(()=>el.classList.add('is-visible'));
-        }
+        '#'+id+' .metric, #'+id+' .card, #'+id+' .vehicle-financial, #'+id+' .customer-hero, #'+id+' .vehicle360-title, #'+id+' .report-panel.active .metric'
+      ).forEach((el)=>{
+        el.classList.add('reveal-swiss','is-visible');
       });
     },40);
   };
@@ -7670,7 +7729,13 @@ table thead th.sortable-th.sort-desc{
     currentReportTab = tab;
     document.querySelectorAll('[data-report-tab]').forEach(b=>b.classList.toggle('active', b===btn));
     document.querySelectorAll('.report-panel').forEach(p=>p.classList.remove('active'));
-    document.getElementById('report-'+tab).classList.add('active');
+    const panel = document.getElementById('report-'+tab);
+    panel.classList.add('active');
+    // Mismo problema que en showView: estos .metric ya vienen marcados
+    // como reveal-swiss desde la carga inicial de la página (aunque
+    // estuvieran ocultos), así que sin esto se quedan invisibles hasta
+    // que el usuario haga scroll.
+    panel.querySelectorAll('.metric, .card').forEach(el=>el.classList.add('reveal-swiss','is-visible'));
     renderActiveReportTab();
   }
 
@@ -8006,6 +8071,11 @@ table thead th.sortable-th.sort-desc{
 </script>
 
 <style id="v22-visual-refresh">
+@media(min-width:1181px){
+/* Todo este bloque es un refresco visual pensado para desktop. Sin este
+   envoltorio, sus reglas (sin media query propia) pisaban por orden de
+   cascada los ajustes responsivos de móvil definidos más arriba en el
+   archivo, rompiendo el layout en pantallas chicas. */
 /* =========================================================
    V22 — SLATE BLUE / COMPACT PREMIUM OPERATIONS UI
    Keeps all current functionality. Visual layer only.
@@ -8045,7 +8115,9 @@ body{
   color:var(--text);
 }
 
-/* ---------- APP SHELL ---------- */
+/* ---------- APP SHELL ----------
+   (Todo este bloque ya vive dentro del envoltorio @media min-width:1181px
+   de más arriba — no necesita su propio media query.) */
 .app{
   grid-template-columns:232px minmax(0,1fr);
   background:transparent;
@@ -8564,6 +8636,8 @@ table thead th.sortable-th.sort-desc{
   .metrics{grid-template-columns:1fr}
   h1,.topbar h1,.page-heading h1{font-size:29px}
 }
+}
+/* fin del envoltorio de solo-desktop para v22-visual-refresh */
 </style>
 
 
