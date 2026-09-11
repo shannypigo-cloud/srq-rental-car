@@ -4294,47 +4294,16 @@ table thead th.sortable-th.sort-desc{
 
   let dashboardRange = {start:new Date('2026-09-01T00:00:00'), end:new Date('2026-09-08T23:59:59')};
 
-  function normalizeDateOnly_(value){
-    if(!value) return '';
-
-    // Already a clean HTML date value.
-    if(typeof value === 'string'){
-      const raw = value.trim();
-
-      // Handles both YYYY-MM-DD and Apps Script ISO values such as
-      // 2026-09-08T04:00:00.000Z without allowing timezone conversion
-      // to move the calendar date.
-      const isoDate = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
-      if(isoDate) return `${isoDate[1]}-${isoDate[2]}-${isoDate[3]}`;
-    }
-
-    const d = value instanceof Date ? value : new Date(value);
-    if(Number.isNaN(d.getTime())) return '';
-
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth()+1).padStart(2,'0');
-    const dd = String(d.getDate()).padStart(2,'0');
-    return `${yyyy}-${mm}-${dd}`;
+  function parseLocalDate(dateStr,endOfDay=false){
+    if(!dateStr) return new Date(NaN);
+    const [y,m,d] = String(dateStr).split('-').map(Number);
+    if(!y || !m || !d) return new Date(NaN);
+    return new Date(y,m-1,d,endOfDay?23:0,endOfDay?59:0,endOfDay?59:0);
   }
 
-  function parseLocalDate(value,endOfDay=false){
-    const normalized = normalizeDateOnly_(value);
-    if(!normalized) return new Date(NaN);
-
-    const [y,m,d] = normalized.split('-').map(Number);
-    return new Date(
-      y,
-      m-1,
-      d,
-      endOfDay ? 23 : 0,
-      endOfDay ? 59 : 0,
-      endOfDay ? 59 : 0,
-      endOfDay ? 999 : 0
-    );
-  }
-
-  function formatShortDate(value){
-    const d = parseLocalDate(value);
+  function formatShortDate(dateStr){
+    if(!dateStr) return '—';
+    const d = parseLocalDate(dateStr);
     if(Number.isNaN(d.getTime())) return '—';
     return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
   }
@@ -4512,9 +4481,23 @@ table thead th.sortable-th.sort-desc{
   }
   function showLoginScreen(){ showAuthScreen('loginScreen'); }
 
+  // Acepta un string normal, pero también blinda contra el caso en que algo
+  // (backend, red, o un bug futuro) entregue un objeto en vez de texto —
+  // nunca debe verse literalmente "[object Object]" en pantalla.
+  function safeErrorText(message){
+    if(typeof message === 'string') return message;
+    if(message instanceof Error) return message.message || 'Ocurrió un error inesperado.';
+    if(message && typeof message === 'object'){
+      if(typeof message.error === 'string') return message.error;
+      if(typeof message.message === 'string') return message.message;
+      try{ return JSON.stringify(message); }catch(e){ /* sigue abajo */ }
+    }
+    return 'Ocurrió un error inesperado. Intenta de nuevo.';
+  }
+
   function showAuthError(elId, message){
     const el = document.getElementById(elId);
-    el.textContent = message;
+    el.textContent = safeErrorText(message);
     el.classList.add('show');
   }
   function clearAuthError(elId){
@@ -5968,7 +5951,15 @@ table thead th.sortable-th.sort-desc{
       headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify({ action, payload, token: API_TOKEN })
     });
-    return res.json();
+    // Si Apps Script devuelve algo que no es JSON (una página de error de
+    // Google, un redirect a login, un timeout de la plataforma), res.json()
+    // lanza una excepción. La convertimos aquí en un {error} normal para
+    // que el llamador siempre reciba la misma forma de respuesta.
+    try{
+      return await res.json();
+    }catch(err){
+      return { error: 'El servidor no respondió correctamente. Intenta de nuevo en unos segundos.' };
+    }
   }
 
   // When the backend says the session is gone, drop the user back to the
@@ -5998,7 +5989,14 @@ table thead th.sortable-th.sort-desc{
   // <input type="date"> requires. Returns '' for anything it can't parse,
   // so the field is left blank instead of silently rejecting a bad value.
   function toDateInputValue_(v){
-    return normalizeDateOnly_(v);
+    if(!v) return '';
+    if(typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+    const d = new Date(v);
+    if(Number.isNaN(d.getTime())) return '';
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth()+1).padStart(2,'0');
+    const dd = String(d.getDate()).padStart(2,'0');
+    return `${yyyy}-${mm}-${dd}`;
   }
 
   function todayISO_(){
@@ -6030,25 +6028,28 @@ table thead th.sortable-th.sort-desc{
         alert('La hoja respondió con un error: ' + data.error + '\n\nSe muestran datos de ejemplo mientras tanto.');
         return;
       }
+
+      // Google Sheets devuelve las celdas de fecha como objetos Date completos
+      // (p.ej. "2026-09-08T04:00:00.000Z") en vez de "YYYY-MM-DD". Cualquier
+      // función que arme fechas cortando el string por "-" (parseLocalDate,
+      // gráficas de reportes, etc.) rompe con ese formato y muestra
+      // "Invalid Date". Normalizamos aquí, una sola vez, para que el resto
+      // de la app siempre trabaje con "YYYY-MM-DD" limpio.
+      const normalizeDateFields = (records, fields) => {
+        (records||[]).forEach(r => {
+          fields.forEach(f => { if(r[f]) r[f] = toDateInputValue_(r[f]); });
+        });
+      };
+      normalizeDateFields(data.rentals, ['startDate','scheduledReturnDate','returnDate']);
+      normalizeDateFields(data.vehicles, ['purchaseDate','registrationExp','insuranceExp']);
+      normalizeDateFields(data.maintenance, ['date','nextDate']);
+      normalizeDateFields(data.customers, ['licenseExp','dob']);
+
       replaceAll_(customers, data.customers);
       replaceAll_(vehicleRecords, data.vehicles);
       replaceAll_(rentals, data.rentals);
       replaceAll_(maintenanceRecords, data.maintenance);
       replaceAll_(claimsInvoices, data.invoices);
-
-      // Google Sheets Date/Time cells arrive through Apps Script as ISO
-      // datetimes. Normalize rental calendar/time fields once after loading
-      // so tables, check-in, reports and profiles all consume the same shape.
-      Object.values(rentals).forEach(r=>{
-        r.startDate = normalizeDateOnly_(r.startDate);
-        r.scheduledReturnDate = normalizeDateOnly_(r.scheduledReturnDate);
-        r.returnDate = normalizeDateOnly_(r.returnDate);
-        r.startTime = normalizeTimeOnly_(r.startTime);
-        r.scheduledReturnTime = normalizeTimeOnly_(r.scheduledReturnTime);
-        r.returnTime = normalizeTimeOnly_(r.returnTime);
-        if(r.startDate) r.start = formatShortDate(r.startDate);
-        if(r.scheduledReturnDate) r.expected = formatShortDate(r.scheduledReturnDate);
-      });
 
       currentVehicleId = Object.keys(vehicleRecords)[0] || null;
       currentCustomerId = Object.keys(customers)[0] || null;
@@ -6127,8 +6128,9 @@ table thead th.sortable-th.sort-desc{
       throw new Error('SESSION_EXPIRED');
     }
     if(result.error){
-      alert('Error guardando en la hoja: ' + result.error);
-      throw new Error(result.error);
+      const msg = safeErrorText(result.error);
+      alert('Error guardando en la hoja: ' + msg);
+      throw new Error(msg);
     }
     return result;
   }
@@ -7058,14 +7060,14 @@ table thead th.sortable-th.sort-desc{
       `Salió con <strong>${formatInteger(r.milesOut)} millas</strong> · Gasolina: <strong>${r.gasOut}</strong> · Regreso esperado: <strong>${r.expected}</strong><br>` +
       `${Number(r.allowedMilesPerDay)>0 ? `<strong>${formatInteger(r.allowedMilesPerDay)} mi/día</strong> · ${formatInteger(rentalAllowedMiles(r))} mi permitidas` : '<strong>Millaje:</strong> Unlimited'} · Delivery: <strong>${formatCurrency(r.deliveryFee||0)}</strong>`;
     document.getElementById('scheduledStartDate').value = toDateInputValue_(r.startDate);
-    document.getElementById('scheduledStartTime').value = normalizeTimeOnly_(r.startTime);
+    document.getElementById('scheduledStartTime').value = r.startTime || '';
     document.getElementById('scheduledReturnDate').value = toDateInputValue_(r.scheduledReturnDate || r.returnDate);
-    document.getElementById('scheduledReturnTime').value = normalizeTimeOnly_(r.scheduledReturnTime);
+    document.getElementById('scheduledReturnTime').value = r.scheduledReturnTime || '';
     document.getElementById('milesOut').value = r.milesOut;
     document.getElementById('milesIn').value = '';
     refreshPrettyNumberInput('milesOut');
     document.getElementById('returnDate').value = toDateInputValue_(r.returnDate || r.scheduledReturnDate) || todayISO_();
-    document.getElementById('returnTime').value = normalizeTimeOnly_(r.returnTime || r.scheduledReturnTime);
+    document.getElementById('returnTime').value = r.returnTime || r.scheduledReturnTime || '';
     ['lateFee','fuelFee','cleaningFee','mileageFee','otherFee','discount'].forEach(id=>document.getElementById(id).value=0);
     document.querySelectorAll('.fuel-btn').forEach(b=>b.classList.remove('active'));
     document.querySelector('.fuel-btn').classList.add('active');
@@ -7085,15 +7087,10 @@ table thead th.sortable-th.sort-desc{
     return readAppNumber(id);
   }
 
-  function combineDateTime(dateValue,timeValue){
-    const dateStr = normalizeDateOnly_(dateValue);
-    const timeStr = normalizeTimeOnly_(timeValue);
+  function combineDateTime(dateStr,timeStr){
     if(!dateStr || !timeStr) return null;
-
-    const [y,m,d] = dateStr.split('-').map(Number);
-    const [hh,mm] = timeStr.split(':').map(Number);
-    const dt = new Date(y,m-1,d,hh,mm,0,0);
-    return Number.isNaN(dt.getTime()) ? null : dt;
+    const d = new Date(`${dateStr}T${timeStr}:00`);
+    return isNaN(d.getTime()) ? null : d;
   }
 
   function minutesLate(scheduledDate,scheduledTime,actualDate,actualTime){
@@ -7193,36 +7190,9 @@ table thead th.sortable-th.sort-desc{
   }
 
 
-  function normalizeTimeOnly_(value){
-    if(value === null || value === undefined || value === '') return '';
-
-    if(typeof value === 'string'){
-      const raw = value.trim();
-
-      // Normal browser/form value: HH:mm or HH:mm:ss
-      const plain = raw.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
-      if(plain){
-        const hh = Number(plain[1]);
-        const mm = Number(plain[2]);
-        if(hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59){
-          return `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
-        }
-      }
-    }
-
-    // A Google Sheets time cell normally reaches the browser as a full
-    // ISO datetime. Convert that instant to the browser's local clock.
-    const d = value instanceof Date ? value : new Date(value);
-    if(Number.isNaN(d.getTime())) return '';
-
-    return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-  }
-
-  function formatTime(value){
-    const normalized = normalizeTimeOnly_(value);
-    if(!normalized) return '—';
-
-    const [hh,mm] = normalized.split(':').map(Number);
+  function formatTime(t){
+    if(!t) return '—';
+    const [hh,mm] = t.split(':').map(Number);
     const suffix = hh >= 12 ? 'PM' : 'AM';
     const h12 = hh % 12 || 12;
     return `${h12}:${String(mm).padStart(2,'0')} ${suffix}`;
@@ -7263,9 +7233,9 @@ table thead th.sortable-th.sort-desc{
     document.getElementById('profileNet').textContent = formatCurrency(rentalNet(r));
 
     document.getElementById('editScheduledReturnDate').value = toDateInputValue_(r.scheduledReturnDate);
-    document.getElementById('editScheduledReturnTime').value = normalizeTimeOnly_(r.scheduledReturnTime);
+    document.getElementById('editScheduledReturnTime').value = r.scheduledReturnTime || '';
     document.getElementById('editReturnDate').value = toDateInputValue_(r.returnDate);
-    document.getElementById('editReturnTime').value = normalizeTimeOnly_(r.returnTime);
+    document.getElementById('editReturnTime').value = r.returnTime || '';
     document.getElementById('editMilesIn').value = r.milesIn;
     document.getElementById('editFuel').value = r.fuelIn;
     document.getElementById('editLateFee').value = r.lateFee || 0;
@@ -8791,620 +8761,6 @@ table thead th.sortable-th.sort-desc{
 @media(max-width:390px){
   .booking-preview-grid,
   .mileage-checkin-grid{grid-template-columns:1fr}
-}
-</style>
-
-
-<style id="v27-responsive-all-devices">
-/* =========================================================
-   V27 — RESPONSIVE ALL DEVICES
-   Desktop / Tablet landscape / Tablet portrait / Mobile
-   This layer changes layout only. Branding and app logic stay intact.
-   ========================================================= */
-
-html,body{width:100%;max-width:100%;overflow-x:hidden}
-.app,main,.view,.card,.grid,.table-wrap{min-width:0}
-canvas{max-width:100%!important}
-
-/* -----------------------------
-   TABLET LANDSCAPE / SMALL LAPTOP
-   821px–1180px
-   Keep a compact LEFT sidebar.
-   ----------------------------- */
-@media (min-width:821px) and (max-width:1180px){
-  .app{
-    display:grid!important;
-    grid-template-columns:190px minmax(0,1fr)!important;
-    min-height:100vh;
-  }
-
-  aside{
-    position:sticky!important;
-    top:0!important;
-    left:auto!important;
-    right:auto!important;
-    bottom:auto!important;
-    height:100vh!important;
-    width:auto!important;
-    padding:20px 12px 16px!important;
-    display:flex!important;
-    flex-direction:column!important;
-    gap:20px!important;
-    background:linear-gradient(180deg,#141c2e 0%,#1b263d 58%,#121a2b 100%)!important;
-    border-top:0!important;
-    border-right:1px solid rgba(255,255,255,.07)!important;
-    overflow-y:auto;
-    z-index:40;
-  }
-
-  .brand{
-    display:flex!important;
-    gap:9px!important;
-    padding:0 2px 16px!important;
-  }
-  .brand-mark{
-    width:40px!important;
-    height:40px!important;
-    flex:0 0 40px;
-  }
-  .brand strong{font-size:12px!important}
-  .brand small{font-size:8px!important}
-
-  nav{
-    display:grid!important;
-    grid-template-columns:1fr!important;
-    gap:3px!important;
-    width:100%;
-  }
-  nav button{
-    width:100%;
-    text-align:left!important;
-    min-height:42px;
-    padding:10px 9px!important;
-    font-size:10.5px!important;
-    line-height:1.15;
-    white-space:normal!important;
-    overflow:visible!important;
-    text-overflow:clip!important;
-    border-left:0!important;
-    border-top:0!important;
-    border-radius:7px!important;
-  }
-  nav button.active{
-    border-top:0!important;
-    box-shadow:inset 3px 0 0 #7890ff!important;
-  }
-
-  #sessionBar{
-    display:block!important;
-    margin-top:auto!important;
-    padding:12px 0 0!important;
-    border-top:1px solid rgba(255,255,255,.10)!important;
-  }
-  #sessionBar .btn.secondary{
-    min-height:36px;
-    padding:8px 7px!important;
-    font-size:9px!important;
-    white-space:normal;
-  }
-  .aside-foot{display:none!important}
-
-  main{
-    width:100%!important;
-    max-width:none!important;
-    margin:0!important;
-    padding:0 20px 64px!important;
-    overflow-x:hidden!important;
-  }
-
-  .topbar{
-    min-height:auto!important;
-    width:auto!important;
-    margin:0 -20px 22px!important;
-    padding:22px 20px 19px!important;
-    display:grid!important;
-    grid-template-columns:minmax(0,1fr) auto!important;
-    align-items:center!important;
-    gap:14px!important;
-  }
-  .topbar:before{left:20px!important}
-  .topbar > div{max-width:none!important;min-width:0}
-  .page-branding{
-    grid-template-columns:48px minmax(0,1fr)!important;
-    gap:12px!important;
-    align-items:center!important;
-  }
-  .page-logo{
-    width:48px!important;
-    height:48px!important;
-  }
-  .page-heading .eyebrow{
-    margin-bottom:4px!important;
-    font-size:8px!important;
-  }
-  h1,.topbar h1,.page-heading h1{
-    font-size:clamp(34px,5vw,48px)!important;
-    line-height:.96!important;
-  }
-  .topbar .btn.primary{
-    display:inline-flex!important;
-    justify-self:end!important;
-    align-self:center!important;
-    margin:0!important;
-  }
-
-  .dashboard-filters{
-    display:flex!important;
-    flex-wrap:wrap!important;
-    gap:7px!important;
-    width:100%!important;
-    padding:12px!important;
-  }
-  .dashboard-filters .filter-pill{
-    width:auto!important;
-    flex:0 0 auto;
-  }
-  .period-label{
-    width:100%;
-    margin-left:0!important;
-    padding-top:4px;
-  }
-
-  .metrics{
-    grid-template-columns:repeat(2,minmax(0,1fr))!important;
-    gap:10px!important;
-    width:auto!important;
-    margin-left:0!important;
-    margin-bottom:24px!important;
-    padding:0!important;
-    background:transparent!important;
-  }
-  .metric{
-    min-height:128px!important;
-    padding:18px!important;
-    border:1px solid #cad3e1!important;
-  }
-  .metric:first-child{border-left:1px solid #cad3e1!important}
-  .metric strong{font-size:36px!important}
-
-  .grid{gap:18px!important}
-  .grid.two,.two{
-    grid-template-columns:1fr!important;
-  }
-
-  .card{
-    padding:19px!important;
-  }
-  .card h2{
-    font-size:26px!important;
-  }
-
-  .toolbar,
-  .customer-directory-toolbar,
-  .vehicle-sort-toolbar{
-    display:flex!important;
-    flex-wrap:wrap!important;
-    gap:8px!important;
-  }
-  .toolbar .search{
-    min-width:220px;
-    flex:1 1 260px;
-  }
-  .toolbar select{
-    flex:1 1 180px;
-    min-width:160px!important;
-  }
-
-  .customer-scroll-list{
-    max-height:440px!important;
-  }
-  .vehicle-kpis{
-    grid-template-columns:repeat(4,minmax(0,1fr))!important;
-  }
-  .vehicle-financial-grid{
-    grid-template-columns:repeat(3,minmax(0,1fr))!important;
-  }
-
-  .table-wrap{
-    width:100%!important;
-    max-width:100%!important;
-    overflow-x:auto!important;
-    -webkit-overflow-scrolling:touch;
-  }
-  table{
-    min-width:max-content;
-  }
-
-  .drawer{
-    width:min(720px,calc(100vw - 48px))!important;
-    max-width:calc(100vw - 24px)!important;
-    padding:24px!important;
-  }
-  .drawer-head{
-    position:sticky!important;
-    top:-24px!important;
-    z-index:18!important;
-    margin:-24px -24px 18px!important;
-    padding:20px 24px 14px!important;
-  }
-  .drawer-head h2{font-size:38px!important}
-  .form-grid{
-    grid-template-columns:repeat(2,minmax(0,1fr))!important;
-  }
-  .drawer-actions{
-    margin-left:-24px!important;
-    margin-right:-24px!important;
-    padding-left:24px!important;
-    padding-right:24px!important;
-  }
-
-  .booking-preview-grid{
-    grid-template-columns:repeat(3,minmax(0,1fr))!important;
-  }
-  .mileage-checkin-grid{
-    grid-template-columns:repeat(3,minmax(0,1fr))!important;
-  }
-
-  #reports .grid.two{
-    grid-template-columns:1fr!important;
-  }
-}
-
-/* -----------------------------
-   TABLET PORTRAIT
-   621px–820px
-   Bottom navigation, full-width workspace.
-   ----------------------------- */
-@media (min-width:621px) and (max-width:820px){
-  .app{
-    grid-template-columns:1fr!important;
-  }
-
-  aside{
-    position:fixed!important;
-    left:0!important;
-    right:0!important;
-    bottom:0!important;
-    top:auto!important;
-    width:100%!important;
-    height:64px!important;
-    padding:0 6px!important;
-    display:block!important;
-    background:#172033!important;
-    border-top:1px solid rgba(255,255,255,.10)!important;
-    border-right:0!important;
-    z-index:100!important;
-    overflow:visible!important;
-  }
-
-  .brand,.aside-foot{display:none!important}
-
-  nav{
-    display:grid!important;
-    grid-template-columns:repeat(6,minmax(0,1fr))!important;
-    width:100%!important;
-    height:64px;
-    gap:2px!important;
-    align-items:stretch;
-  }
-  nav button{
-    min-width:0!important;
-    min-height:60px;
-    padding:7px 3px!important;
-    font-size:9px!important;
-    line-height:1.1!important;
-    text-align:center!important;
-    white-space:normal!important;
-    overflow:hidden!important;
-    text-overflow:clip!important;
-    border:0!important;
-    border-top:3px solid transparent!important;
-    border-radius:0!important;
-  }
-  nav button.active{
-    border-top-color:#7890ff!important;
-    box-shadow:none!important;
-    background:#202e4c!important;
-  }
-
-  /* Account controls remain accessible without making the nav two rows tall. */
-  #sessionBar{
-    position:fixed!important;
-    right:10px!important;
-    bottom:70px!important;
-    width:auto!important;
-    max-width:390px!important;
-    display:flex!important;
-    align-items:center!important;
-    justify-content:flex-end!important;
-    gap:5px!important;
-    padding:5px!important;
-    margin:0!important;
-    background:rgba(23,32,51,.96)!important;
-    border:1px solid rgba(255,255,255,.10)!important;
-    border-radius:9px!important;
-    box-shadow:0 8px 24px rgba(18,25,41,.18)!important;
-    z-index:101!important;
-  }
-  #sessionBar > div{display:none!important}
-  #sessionBar .btn.secondary{
-    width:auto!important;
-    margin:0!important;
-    padding:7px 8px!important;
-    min-height:32px!important;
-    font-size:8px!important;
-    border-radius:6px!important;
-  }
-
-  main{
-    width:100%!important;
-    max-width:none!important;
-    padding:0 18px 122px!important;
-    margin:0!important;
-  }
-
-  .topbar{
-    width:auto!important;
-    min-height:auto!important;
-    margin:0 -18px 20px!important;
-    padding:20px 18px 17px!important;
-    display:grid!important;
-    grid-template-columns:minmax(0,1fr) auto!important;
-    align-items:center!important;
-    gap:12px!important;
-  }
-  .topbar:before{left:18px!important}
-  .page-branding{
-    grid-template-columns:45px minmax(0,1fr)!important;
-    gap:11px!important;
-    align-items:center!important;
-  }
-  .page-logo{
-    width:45px!important;
-    height:45px!important;
-  }
-  .page-heading .eyebrow{
-    font-size:7.5px!important;
-    margin-bottom:4px!important;
-  }
-  h1,.topbar h1,.page-heading h1{
-    font-size:36px!important;
-    line-height:.98!important;
-  }
-  .topbar .btn.primary{
-    display:inline-flex!important;
-    justify-self:end!important;
-    margin:0!important;
-    padding:10px 12px!important;
-  }
-
-  .dashboard-filters{
-    display:grid!important;
-    grid-template-columns:repeat(2,minmax(0,1fr))!important;
-    gap:7px!important;
-    padding:10px!important;
-  }
-  .dashboard-filters .filter-pill{
-    width:100%!important;
-  }
-  .custom-range,
-  .period-label{
-    grid-column:1/-1!important;
-  }
-
-  .metrics{
-    grid-template-columns:repeat(2,minmax(0,1fr))!important;
-    gap:9px!important;
-    width:auto!important;
-    margin-left:0!important;
-    padding:0!important;
-    margin-bottom:22px!important;
-  }
-  .metric{
-    min-height:120px!important;
-    padding:16px!important;
-  }
-  .metric strong{font-size:32px!important}
-
-  .grid.two,.two{
-    grid-template-columns:1fr!important;
-  }
-  .grid{gap:16px!important}
-
-  .card{
-    padding:17px!important;
-  }
-  .card h2{font-size:24px!important}
-
-  .toolbar,
-  .customer-directory-toolbar,
-  .vehicle-sort-toolbar{
-    display:grid!important;
-    grid-template-columns:minmax(0,1fr) minmax(145px,.55fr) auto!important;
-    gap:7px!important;
-  }
-  .toolbar .search,
-  .customer-directory-toolbar .search{
-    grid-column:1/-1!important;
-    min-width:0!important;
-  }
-  .toolbar select,
-  .customer-directory-toolbar select,
-  .vehicle-sort-toolbar select{
-    width:100%!important;
-    min-width:0!important;
-  }
-
-  .customer-standing-filters{
-    display:grid!important;
-    grid-template-columns:1fr 1fr!important;
-  }
-  .standing-filter{
-    width:100%!important;
-    justify-content:space-between;
-  }
-
-  .customer-scroll-list{
-    max-height:42vh!important;
-  }
-
-  .vehicle-kpis{
-    grid-template-columns:repeat(2,minmax(0,1fr))!important;
-  }
-  .vehicle-financial-grid{
-    grid-template-columns:repeat(2,minmax(0,1fr))!important;
-  }
-
-  .table-wrap{
-    width:100%!important;
-    overflow-x:auto!important;
-    -webkit-overflow-scrolling:touch;
-  }
-  table{
-    width:max-content!important;
-    min-width:100%!important;
-  }
-
-  .drawer{
-    width:100vw!important;
-    max-width:100vw!important;
-    height:100dvh!important;
-    padding:20px 18px 28px!important;
-    border-radius:0!important;
-  }
-  .drawer-head{
-    position:sticky!important;
-    top:-20px!important;
-    z-index:18!important;
-    margin:-20px -18px 18px!important;
-    padding:18px 18px 13px!important;
-  }
-  .drawer-head h2{font-size:36px!important}
-  .form-grid{
-    grid-template-columns:repeat(2,minmax(0,1fr))!important;
-  }
-  .field.full{grid-column:1/-1!important}
-
-  .booking-preview-grid{
-    grid-template-columns:repeat(3,minmax(0,1fr))!important;
-  }
-  .mileage-checkin-grid{
-    grid-template-columns:repeat(3,minmax(0,1fr))!important;
-  }
-
-  #reports .grid.two{
-    grid-template-columns:1fr!important;
-  }
-}
-
-/* -----------------------------
-   MOBILE
-   <=620px
-   Preserve all six modules.
-   ----------------------------- */
-@media (max-width:620px){
-  aside{
-    height:60px!important;
-    padding:0 4px!important;
-    display:block!important;
-    overflow:visible!important;
-    z-index:100!important;
-  }
-
-  nav{
-    display:grid!important;
-    grid-template-columns:repeat(6,minmax(0,1fr))!important;
-    width:100%!important;
-    height:60px!important;
-    gap:1px!important;
-  }
-  nav button{
-    min-width:0!important;
-    min-height:58px!important;
-    padding:7px 1px!important;
-    font-size:7.5px!important;
-    line-height:1.08!important;
-    white-space:normal!important;
-    overflow:hidden!important;
-    text-overflow:clip!important;
-    border-radius:0!important;
-    border-left:0!important;
-    border-top:3px solid transparent!important;
-  }
-  nav button.active{
-    border-top-color:#7890ff!important;
-    box-shadow:none!important;
-  }
-
-  #sessionBar{
-    position:fixed!important;
-    right:8px!important;
-    bottom:66px!important;
-    display:flex!important;
-    align-items:center!important;
-    justify-content:flex-end!important;
-    gap:4px!important;
-    width:auto!important;
-    max-width:calc(100vw - 16px)!important;
-    padding:4px!important;
-    margin:0!important;
-    background:rgba(23,32,51,.96)!important;
-    border:1px solid rgba(255,255,255,.10)!important;
-    border-radius:8px!important;
-    z-index:101!important;
-  }
-  #sessionBar > div{display:none!important}
-  #sessionBar .btn.secondary{
-    width:auto!important;
-    margin:0!important;
-    min-height:29px!important;
-    padding:6px 7px!important;
-    font-size:7px!important;
-    line-height:1!important;
-    border-radius:5px!important;
-  }
-
-  main{
-    padding-bottom:142px!important;
-  }
-
-  .mobile-actions{
-    bottom:105px!important;
-  }
-
-  .topbar{
-    min-height:auto!important;
-  }
-
-  .customer-standing-filters{
-    grid-template-columns:1fr 1fr!important;
-  }
-
-  .toolbar,
-  .customer-directory-toolbar,
-  .vehicle-sort-toolbar{
-    width:100%;
-  }
-
-  .table-wrap{
-    overflow-x:auto!important;
-    overscroll-behavior-x:contain;
-  }
-
-  .drawer{
-    padding-bottom:42px!important;
-  }
-}
-
-@media (max-width:420px){
-  nav button{font-size:7px!important}
-  #sessionBar .btn.secondary{font-size:6.5px!important;padding:6px!important}
-  .mobile-actions{bottom:102px!important}
-}
-
-@media (max-width:360px){
-  nav button{font-size:6.5px!important}
-  .customer-standing-filters{grid-template-columns:1fr!important}
 }
 </style>
 
